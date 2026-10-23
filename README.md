@@ -22,14 +22,9 @@ npm run dist       # builds an installer for your OS into dist/
 
 ## Installers
 
-Every push builds an installer for each OS in GitHub Actions (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. Builds are not signed with a developer certificate yet, so the first open shows a warning.
+Every push builds an installer for each OS in GitHub Actions (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. The macOS app is signed with a Developer ID and notarized by Apple, so it opens normally. That needs these repository secrets: `CSC_LINK` (base64 of the Developer ID Application .p12), `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them, as on fork PRs, the Mac build gets an ad-hoc signature and must be opened via System Settings, Privacy & Security, Open Anyway.
 
-- **Windows:** on the SmartScreen screen, choose More info, then Run anyway.
-- **macOS:** drag the app to Applications, then try to open it once. Go to System Settings, Privacy & Security, and choose Open Anyway next to Information Hub. If macOS still says the app is damaged, run this once in Terminal:
-
-  ```sh
-  xattr -dr com.apple.quarantine "/Applications/Information Hub.app"
-  ```
+Windows builds are not signed yet: on the SmartScreen screen, choose More info, then Run anyway.
 
 ## Layout
 
