@@ -10,7 +10,7 @@ win:
   target: nsis
 mac:
   target: dmg
-  # Signed with the Developer ID from CSC_LINK when CI has it; otherwise
+  # Signed with the Developer ID that CI imports into the keychain; otherwise
   # build/after-pack.cjs applies an ad-hoc signature.
   category: public.app-category.productivity
 linux:

@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process')
 const { join } = require('node:path')
 
 exports.default = async function afterPack(context) {
-  if (context.electronPlatformName !== 'darwin' || process.env.CSC_LINK) return
+  if (context.electronPlatformName !== 'darwin' || process.env.SIGN_MAC === 'true') return
   const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' })
 }

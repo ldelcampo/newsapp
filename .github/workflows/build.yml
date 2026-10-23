@@ -22,13 +22,37 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Import Developer ID certificate
+        id: cert
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          # Absent on fork PRs, in which case the app gets an ad-hoc signature.
+          P12_BASE64: ${{ secrets.CSC_LINK }}
+          P12_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ]; then echo "signed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          kcpass=$(openssl rand -base64 24)
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kcpass" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$kcpass" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$kcpass" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          ids=$(security find-identity -v -p codesigning "$keychain" | sed -E 's/^ *[0-9]+\) [0-9A-F]+ //')
+          if ! echo "$ids" | grep -q 'Developer ID Application'; then
+            echo "::error::The certificate in CSC_LINK has no Developer ID Application identity with its private key. Found: $(echo "$ids" | tr '\n' ' ')"
+            exit 1
+          fi
+          echo "::notice::Signing as $(echo "$ids" | grep 'Developer ID Application' | head -1)"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Build installer
         shell: bash
         env:
-          # Developer ID signing and notarization apply to macOS only, and only
-          # when the signing secrets exist (they are absent on fork PRs).
-          CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
-          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
+          SIGN_MAC: ${{ steps.cert.outputs.signed }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -37,7 +61,7 @@ jobs:
           CSC_FOR_PULL_REQUEST: 'true'
         run: |
           set -o pipefail
-          if [ -n "$CSC_LINK" ]; then
+          if [ "$SIGN_MAC" = "true" ]; then
             echo "Signing with Developer ID and notarizing"
             cmd="npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true"
           else
@@ -54,7 +78,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         env:
-          SIGNED: ${{ secrets.CSC_LINK != '' }}
+          SIGNED: ${{ steps.cert.outputs.signed }}
         run: |
           app=$(ls -d dist/mac*/*.app | head -1)
           check() {
