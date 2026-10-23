@@ -2,6 +2,7 @@ appId: com.ldelcampo.newsapp
 productName: Information Hub
 directories:
   output: dist
+afterPack: build/after-pack.cjs
 files:
   - out/**
   - package.json
@@ -9,9 +10,8 @@ win:
   target: nsis
 mac:
   target: dmg
-  # Ad-hoc signature until there is an Apple Developer ID. Without any
-  # signature, Apple Silicon Macs report the app as "damaged".
-  identity: '-'
+  # No Developer ID yet: build/after-pack.cjs applies an ad-hoc signature.
+  identity: null
   category: public.app-category.productivity
 linux:
   target: AppImage
