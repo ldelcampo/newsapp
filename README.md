@@ -22,7 +22,7 @@ npm run dist       # builds an installer for your OS into dist/
 
 ## Installers
 
-Every push builds an installer for each OS in GitHub Actions (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. The macOS app is signed with a Developer ID and notarized by Apple, so it opens normally. That needs these repository secrets: `CSC_LINK` (base64 of the Developer ID Application .p12), `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them, as on fork PRs, the Mac build gets an ad-hoc signature and must be opened via System Settings, Privacy & Security, Open Anyway.
+Every push builds the macOS installer in GitHub Actions (Windows and Linux build only on version tags, or from Run workflow with "all platforms" ticked) (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. The macOS app is signed with a Developer ID and notarized by Apple, so it opens normally. That needs these repository secrets: `CSC_LINK` (base64 of the Developer ID Application .p12), `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID`. Without them, as on fork PRs, the Mac build gets an ad-hoc signature and must be opened via System Settings, Privacy & Security, Open Anyway.
 
 Windows builds are not signed yet: on the SmartScreen screen, choose More info, then Run anyway.
 
