@@ -1,0 +1,54 @@
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --fg: #1b2230;
+  --muted: #5a6475;
+  --line: #d9dee6;
+  --accent: #1f4fbf;
+  --accent-soft: #e6edfb;
+  --ok: #1d7a4a;
+  color-scheme: light dark;
+  font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12161d;
+    --surface: #1a2029;
+    --fg: #e4e8ef;
+    --muted: #9aa4b4;
+    --line: #2c3441;
+    --accent: #86a8ff;
+    --accent-soft: #1f2a44;
+    --ok: #5cc58c;
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); }
+h1 { margin: 0 0 16px; font-size: 1.6rem; }
+code { font-size: 0.9em; }
+
+.shell { display: grid; grid-template-columns: 200px 1fr; height: 100vh; }
+.sidebar { background: var(--surface); border-right: 1px solid var(--line); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+.brand { font-weight: 700; padding: 4px 10px 16px; }
+.nav { text-align: left; border: 0; background: none; color: var(--fg); padding: 8px 10px; border-radius: 6px; font: inherit; cursor: pointer; }
+.nav:hover { background: var(--accent-soft); }
+.nav.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.content { padding: 28px 32px; overflow: auto; }
+
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.ok { color: var(--ok); font-weight: 600; }
+
+.settings { display: flex; flex-direction: column; gap: 18px; max-width: 520px; }
+.field { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; }
+.field > span, .field > legend { font-weight: 600; padding: 0; }
+input:not([type]), input[type='text'], select {
+  font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--fg);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px; background: var(--surface); }
+.actions { display: flex; align-items: center; gap: 12px; }
+.primary { font: inherit; font-weight: 600; background: var(--accent); color: var(--surface); border: 0; border-radius: 6px; padding: 8px 18px; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
