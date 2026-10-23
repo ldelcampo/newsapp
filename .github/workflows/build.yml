@@ -38,7 +38,7 @@ jobs:
         run: |
           if [ -n "$CSC_LINK" ]; then
             echo "Signing with Developer ID and notarizing"
-            npm run dist -- -c.mac.notarize=true
+            npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true
           else
             echo "No signing certificate: unsigned (Windows/Linux) or ad-hoc (macOS)"
             CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist
