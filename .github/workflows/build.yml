@@ -26,6 +26,9 @@ jobs:
         env:
           # Unsigned builds for now; signing comes in slice 9.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Check macOS signature
+        if: runner.os == 'macOS'
+        run: codesign --verify --deep --strict --verbose=2 dist/mac*/*.app
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}

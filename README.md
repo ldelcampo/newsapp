@@ -22,7 +22,14 @@ npm run dist       # builds an installer for your OS into dist/
 
 ## Installers
 
-Every push builds an installer for each OS in GitHub Actions (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first open: on macOS, right-click the app and choose Open.
+Every push builds an installer for each OS in GitHub Actions (Actions tab, open a run, download the `installer-*` artifact). Pushing a tag such as `v0.0.1` publishes them as a GitHub release. Builds are not signed with a developer certificate yet, so the first open shows a warning.
+
+- **Windows:** on the SmartScreen screen, choose More info, then Run anyway.
+- **macOS:** drag the app to Applications, then try to open it once. Go to System Settings, Privacy & Security, and choose Open Anyway next to Information Hub. If macOS still says the app is damaged, run this once in Terminal:
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/Information Hub.app"
+  ```
 
 ## Layout
 

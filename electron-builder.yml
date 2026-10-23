@@ -9,6 +9,9 @@ win:
   target: nsis
 mac:
   target: dmg
+  # Ad-hoc signature until there is an Apple Developer ID. Without any
+  # signature, Apple Silicon Macs report the app as "damaged".
+  identity: '-'
   category: public.app-category.productivity
 linux:
   target: AppImage
