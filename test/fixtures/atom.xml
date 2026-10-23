@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+  <title>Atom Example</title>
+  <entry>
+    <title>AI chips face new export rules</title>
+    <link rel="alternate" href="https://example.org/ai-chips"/>
+    <link rel="self" href="https://example.org/self"/>
+    <updated>2026-10-23T12:00:00Z</updated>
+    <summary>Artificial intelligence hardware.</summary>
+  </entry>
+</feed>

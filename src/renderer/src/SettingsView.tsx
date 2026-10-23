@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
+import { SourcesEditor } from './SourcesEditor'
 
 export function SettingsView(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -85,6 +86,17 @@ export function SettingsView(): React.JSX.Element {
             </label>
           ))}
         </div>
+      </fieldset>
+
+      <label className="field">
+        <span>News server</span>
+        <input id="newsServerUrl" value={settings.newsServerUrl} onChange={(e) => update({ newsServerUrl: e.target.value })} />
+        <small className="muted">Shared server that collects the included sources. Your topics never leave this computer.</small>
+      </label>
+
+      <fieldset className="field">
+        <legend>News sources</legend>
+        <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
       </fieldset>
 
       <div className="actions">

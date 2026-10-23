@@ -33,7 +33,9 @@ describe('SettingsStore', () => {
       displayName: 'Luis',
       topics: ['economía'],
       newsLanguages: ['es', 'en'],
-      theme: 'dark'
+      theme: 'dark',
+      newsServerUrl: 'http://localhost:8787',
+      customSources: []
     })
   })
 

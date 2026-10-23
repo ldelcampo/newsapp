@@ -1,8 +1,11 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
+import { normalizeSettings } from '../shared/settings'
 
 let store: SettingsStore
+let news: NewsService
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -37,6 +40,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   store = new SettingsStore(app.getPath('userData'))
+  news = new NewsService(app.getPath('userData'))
   nativeTheme.themeSource = store.load().theme
 
   ipcMain.handle('settings:get', () => store.load())
@@ -44,6 +48,15 @@ app.whenReady().then(() => {
     const saved = store.save(next)
     nativeTheme.themeSource = saved.theme
     return saved
+  })
+  ipcMain.handle('news:load', () => news.load(store.load()))
+  ipcMain.handle('news:test-source', (_e, source: unknown) => {
+    // Reuse settings validation so the renderer cannot hand us a malformed source.
+    const [clean] = normalizeSettings({ customSources: [source] }).customSources
+    return clean ? testSource(clean) : { ok: false, error: 'Enter a name and an address starting with https://.' }
+  })
+  ipcMain.handle('app:open-external', (_e, url: unknown) => {
+    if (typeof url === 'string' && url.startsWith('https://')) return shell.openExternal(url)
   })
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
