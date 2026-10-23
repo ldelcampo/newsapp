@@ -22,18 +22,44 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run dist
+      - name: Build installer
+        shell: bash
         env:
-          # Unsigned builds for now; signing comes in slice 9.
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Developer ID signing and notarization apply to macOS only, and only
+          # when the signing secrets exist (they are absent on fork PRs).
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            echo "Signing with Developer ID and notarizing"
+            npm run dist -- -c.mac.notarize=true
+          else
+            echo "No signing certificate: unsigned (Windows/Linux) or ad-hoc (macOS)"
+            CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist
+          fi
       - name: Check macOS signature
         if: runner.os == 'macOS'
+        shell: bash
+        env:
+          SIGNED: ${{ secrets.CSC_LINK != '' }}
         run: |
-          if ! out=$(codesign --verify --deep --strict --verbose=2 dist/mac*/*.app 2>&1); then
-            echo "::error::codesign verify failed: $(echo "$out" | tr '\n' ' ')"
-            exit 1
+          app=$(ls -d dist/mac*/*.app | head -1)
+          check() {
+            if ! out=$("$@" 2>&1); then
+              echo "::error::$1 failed: $(echo "$out" | tr '\n' ' ')"
+              exit 1
+            fi
+            echo "$out"
+          }
+          check codesign --verify --deep --strict --verbose=2 "$app"
+          if [ "$SIGNED" = "true" ]; then
+            check spctl --assess --type execute --verbose=4 "$app"
+            check xcrun stapler validate "$app"
+            echo "::notice::$(codesign -dv "$app" 2>&1 | grep -E '^Authority=Developer ID Application' | head -1)"
           fi
-          echo "$out"
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}
