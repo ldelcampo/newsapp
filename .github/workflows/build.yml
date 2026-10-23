@@ -36,12 +36,19 @@ jobs:
           # Safe here: secrets are never passed to fork PRs.
           CSC_FOR_PULL_REQUEST: 'true'
         run: |
+          set -o pipefail
           if [ -n "$CSC_LINK" ]; then
             echo "Signing with Developer ID and notarizing"
-            npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true
+            cmd="npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true"
           else
             echo "No signing certificate: unsigned (Windows/Linux) or ad-hoc (macOS)"
-            CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            cmd="npm run dist"
+          fi
+          if ! $cmd 2>&1 | tee build.log; then
+            # Surface the cause as an annotation; secrets are masked by Actions.
+            echo "::error::Installer build failed: $(grep -iE 'error|⨯|fail|sign|notar|identity' build.log | tail -15 | tr '\n' ' ' | cut -c1-3000)"
+            exit 1
           fi
       - name: Check macOS signature
         if: runner.os == 'macOS'
