@@ -1,3 +1,4 @@
+import { DEFAULT_FACT_CHECK, normalizeFactCheck, type FactCheckSettings } from './factcheck'
 import { LEANS, type Source } from './news'
 import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
 
@@ -18,6 +19,8 @@ export interface Settings {
   customSources: Source[]
   /** Dashboard widgets in display order. */
   dashboard: Widget[]
+  /** Which AI checks facts. Its keys live in the OS keychain, not here. */
+  factCheck: FactCheckSettings
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,7 +31,8 @@ export const DEFAULT_SETTINGS: Settings = {
   newsLanguages: ['en'],
   newsServerUrl: '',
   customSources: [],
-  dashboard: DEFAULT_DASHBOARD
+  dashboard: DEFAULT_DASHBOARD,
+  factCheck: DEFAULT_FACT_CHECK
 }
 
 export const NEWS_LANGUAGES: { code: string; label: string }[] = [
@@ -78,6 +82,7 @@ export function normalizeSettings(raw: unknown): Settings {
     customSources: Array.isArray(r.customSources)
       ? r.customSources.map(normalizeSource).filter((x): x is Source => x !== null)
       : DEFAULT_SETTINGS.customSources,
-    dashboard: normalizeDashboard(r.dashboard)
+    dashboard: normalizeDashboard(r.dashboard),
+    factCheck: normalizeFactCheck(r.factCheck)
   }
 }

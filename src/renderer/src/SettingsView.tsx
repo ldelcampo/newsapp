@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
+import { FactCheckEditor } from './FactCheckEditor'
 import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
 import { Icon } from './Icon'
@@ -121,6 +122,11 @@ export function SettingsView(): React.JSX.Element {
       <section className="card enter" style={{ '--i': 2 } as React.CSSProperties}>
         <h2>Sources</h2>
         <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
+      </section>
+
+      <section className="card enter" style={{ '--i': 3 } as React.CSSProperties}>
+        <h2>Fact checking</h2>
+        <FactCheckEditor value={settings.factCheck} onChange={(factCheck) => update({ factCheck })} />
       </section>
 
       <div className="actions sticky-save">
