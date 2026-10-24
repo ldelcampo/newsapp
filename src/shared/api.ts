@@ -16,6 +16,12 @@ export interface NewsResult {
 
 export type SourceTest = { ok: true; count: number; sample: string[] } | { ok: false; error: string }
 
+export type UpdateState =
+  | { status: 'idle' | 'checking' | 'current' }
+  | { status: 'downloading'; percent: number }
+  | { status: 'ready'; version: string }
+  | { status: 'error'; message: string }
+
 /** What the preload script exposes to the renderer as `window.hub`. */
 export interface HubApi {
   getSettings(): Promise<Settings>
@@ -24,4 +30,9 @@ export interface HubApi {
   loadNews(): Promise<NewsResult>
   testSource(source: Source): Promise<SourceTest>
   openExternal(url: string): Promise<void>
+  getUpdate(): Promise<UpdateState>
+  checkForUpdate(): Promise<UpdateState>
+  installUpdate(): Promise<void>
+  /** Calls back on every update state change; returns an unsubscribe function. */
+  onUpdate(cb: (state: UpdateState) => void): () => void
 }

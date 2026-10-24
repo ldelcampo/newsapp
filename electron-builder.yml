@@ -9,10 +9,16 @@ files:
 win:
   target: nsis
 mac:
-  target: dmg
+  # zip is what the auto-updater downloads; dmg is for the first install.
+  target: [dmg, zip]
   # Signed with the Developer ID that CI imports into the keychain; otherwise
   # build/after-pack.cjs applies an ad-hoc signature.
   category: public.app-category.productivity
 linux:
   target: AppImage
   category: Office
+publish:
+  provider: github
+  owner: ldelcampo
+  repo: newsapp
+  releaseType: prerelease

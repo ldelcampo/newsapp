@@ -3,6 +3,7 @@ import { DashboardView } from './DashboardView'
 import { Icon } from './Icon'
 import { NewsView } from './NewsView'
 import { SettingsView } from './SettingsView'
+import { UpdateBanner } from './UpdateBanner'
 
 type View = 'dashboard' | 'mail' | 'calendar' | 'news' | 'settings'
 
@@ -61,6 +62,7 @@ export function App(): React.JSX.Element {
           {body()}
         </div>
       </main>
+      <UpdateBanner />
     </div>
   )
 }

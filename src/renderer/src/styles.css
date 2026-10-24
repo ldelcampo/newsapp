@@ -288,3 +288,11 @@ input::placeholder { color: var(--muted); opacity: 0.7; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
 }
+
+/* ---------- Update notice ---------- */
+.update-banner {
+  position: fixed; right: 24px; bottom: 24px; z-index: 5; display: flex; align-items: center; gap: 16px;
+  padding: 12px 14px 12px 18px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--accent);
+  backdrop-filter: blur(24px); box-shadow: var(--shadow), 0 0 30px -10px var(--accent); animation: rise 0.5s var(--ease);
+}
+.about { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }

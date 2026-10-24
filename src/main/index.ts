@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
+import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
 
 let store: SettingsStore
@@ -65,6 +66,7 @@ app.whenReady().then(() => {
   }))
 
   createWindow()
+  startUpdater()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })

@@ -2,11 +2,24 @@ import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
 import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
+import type { UpdateState } from '@shared/api'
+
+function describeUpdate(u: UpdateState): string {
+  switch (u.status) {
+    case 'checking': return 'Checking…'
+    case 'current': return 'You have the latest version.'
+    case 'downloading': return `Downloading update, ${u.percent}%`
+    case 'ready': return `Version ${u.version} is ready. Restart to update.`
+    case 'error': return `Could not check: ${u.message}`
+    default: return 'Updates are checked automatically in installed builds.'
+  }
+}
 
 export function SettingsView(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [topicsText, setTopicsText] = useState('')
   const [status, setStatus] = useState('')
+  const [update, setUpdate] = useState<UpdateState | null>(null)
   const [info, setInfo] = useState<{ version: string; platform: string; dataDir: string } | null>(null)
 
   useEffect(() => {
@@ -105,9 +118,15 @@ export function SettingsView(): React.JSX.Element {
       </div>
 
       {info && (
-        <p className="muted small">
-          Version {info.version} · {info.platform} · data in <code>{info.dataDir}</code>
-        </p>
+        <div className="about">
+          <p className="muted small">
+            Version {info.version} · {info.platform} · data in <code>{info.dataDir}</code>
+          </p>
+          <button type="button" className="ghost" onClick={() => void window.hub.checkForUpdate().then(setUpdate)}>
+            Check for updates
+          </button>
+          {update && <span className="muted small">{describeUpdate(update)}</span>}
+        </div>
       )}
     </form>
   )
