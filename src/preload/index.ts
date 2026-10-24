@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { HubApi, UpdateState } from '../shared/api'
+import type { Settings } from '../shared/settings'
 
 const api: HubApi = {
   getSettings: () => ipcRenderer.invoke('settings:get'),
@@ -8,6 +9,15 @@ const api: HubApi = {
   loadNews: () => ipcRenderer.invoke('news:load'),
   sourceStatuses: () => ipcRenderer.invoke('news:source-statuses'),
   testSource: (source) => ipcRenderer.invoke('news:test-source', source),
+  syncStatus: () => ipcRenderer.invoke('sync:status'),
+  syncNow: () => ipcRenderer.invoke('sync:now'),
+  chooseSyncFolder: () => ipcRenderer.invoke('sync:choose-folder'),
+  iCloudFolder: () => ipcRenderer.invoke('sync:icloud-folder'),
+  onSettingsChanged: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, s: Settings): void => cb(s)
+    ipcRenderer.on('settings:changed', listener)
+    return () => ipcRenderer.removeListener('settings:changed', listener)
+  },
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   moveToApplications: () => ipcRenderer.invoke('app:move-to-applications'),
   rates: (base, symbols) => ipcRenderer.invoke('widgets:rates', base, symbols),

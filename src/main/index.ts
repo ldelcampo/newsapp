@@ -1,7 +1,10 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
+import { SettingsSync } from './settings-sync'
 import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
 import { normalizeWidget } from '../shared/widgets'
@@ -9,6 +12,7 @@ import { WidgetService } from './widget-service'
 
 let store: SettingsStore
 let news: NewsService
+let sync: SettingsSync
 const widgets = new WidgetService()
 
 function createWindow(): void {
@@ -46,12 +50,31 @@ app.whenReady().then(() => {
   store = new SettingsStore(app.getPath('userData'))
   news = new NewsService(app.getPath('userData'))
   nativeTheme.themeSource = store.load().theme
+  sync = new SettingsSync(store, app.getPath('userData'), (s) => {
+    nativeTheme.themeSource = s.theme
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('settings:changed', s)
+  })
+  sync.start(store.load().syncFolder)
 
   ipcMain.handle('settings:get', () => store.load())
   ipcMain.handle('settings:save', (_e, next: unknown) => {
-    const saved = store.save(next)
+    const saved = sync.save(next)
     nativeTheme.themeSource = saved.theme
     return saved
+  })
+  ipcMain.handle('sync:status', () => sync.getStatus())
+  ipcMain.handle('sync:now', () => {
+    sync.sync()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:choose-folder', async () => {
+    const r = await dialog.showOpenDialog({ title: 'Choose a folder your computers share', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : r.filePaths[0]
+  })
+  // iCloud Drive's folder on macOS, if it is turned on.
+  ipcMain.handle('sync:icloud-folder', () => {
+    const p = join(homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs')
+    return process.platform === 'darwin' && existsSync(p) ? p : null
   })
   ipcMain.handle('news:load', () => news.load(store.load()))
   ipcMain.handle('news:source-statuses', async () => (news.lastSources.length ? news.lastSources : (await news.load(store.load())).sources))
