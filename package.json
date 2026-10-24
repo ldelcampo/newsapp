@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "dist": "npm run build && electron-builder --publish never",
+    "dist:publish": "npm run build && electron-builder --publish always",
     "server:build": "esbuild server/index.ts --bundle --platform=node --target=node22 --outfile=server/dist/server.js",
     "server:dev": "npm run server:build && node server/dist/server.js"
   },
