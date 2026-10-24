@@ -18,6 +18,8 @@ export interface Settings {
   customSources: Source[]
   /** Dashboard widgets in display order. */
   dashboard: Widget[]
+  /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
+  syncFolder: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,7 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
   newsLanguages: ['en'],
   newsServerUrl: '',
   customSources: [],
-  dashboard: DEFAULT_DASHBOARD
+  dashboard: DEFAULT_DASHBOARD,
+  syncFolder: ''
 }
 
 export const NEWS_LANGUAGES: { code: string; label: string }[] = [
@@ -78,6 +81,8 @@ export function normalizeSettings(raw: unknown): Settings {
     customSources: Array.isArray(r.customSources)
       ? r.customSources.map(normalizeSource).filter((x): x is Source => x !== null)
       : DEFAULT_SETTINGS.customSources,
-    dashboard: normalizeDashboard(r.dashboard)
+    dashboard: normalizeDashboard(r.dashboard),
+    // Only absolute paths (macOS/Linux or a Windows drive).
+    syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''
   }
 }

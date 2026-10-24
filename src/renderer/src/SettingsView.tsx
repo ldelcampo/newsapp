@@ -5,6 +5,7 @@ import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
 import { Icon } from './Icon'
 import type { UpdateState } from '@shared/api'
+import { SyncCard } from './SyncCard'
 
 function describeUpdate(u: UpdateState): string {
   switch (u.status) {
@@ -41,6 +42,13 @@ export function SettingsView(): React.JSX.Element {
   const update = (patch: Partial<Settings>): void => {
     setSettings({ ...settings, ...patch })
     setStatus('')
+  }
+
+  /** Sync starts as soon as a folder is picked, without waiting for Save. */
+  const useSyncFolder = async (folder: string): Promise<void> => {
+    const saved = await window.hub.saveSettings({ ...settings, syncFolder: folder })
+    setSettings(saved)
+    setTopicsText(saved.topics.join(', '))
   }
 
   const toggleLanguage = (code: string): void => {
@@ -128,6 +136,8 @@ export function SettingsView(): React.JSX.Element {
         <h2>Sources</h2>
         <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
       </section>
+
+      <SyncCard settings={settings} onFolder={useSyncFolder} />
 
       <div className="actions sticky-save">
         <button type="submit" className="primary">Save</button>

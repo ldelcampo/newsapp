@@ -11,7 +11,8 @@ RUN npx esbuild server/index.ts --bundle --platform=node --target=node22 --outfi
 FROM node:22-alpine
 WORKDIR /app
 COPY --from=build /app/dist/server.js ./server.js
-ENV NODE_ENV=production PORT=8787
+ENV NODE_ENV=production PORT=8787 DATA_DIR=/data
+RUN mkdir -p /data && chown node:node /data
 EXPOSE 8787
 USER node
 CMD ["node", "server.js"]

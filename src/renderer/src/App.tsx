@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { applyTheme } from './theme'
 import { DashboardView } from './DashboardView'
 import { Icon } from './Icon'
 import { NewsView } from './NewsView'
@@ -17,6 +18,20 @@ const VIEWS: { id: View; label: string; comingIn?: string }[] = [
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('dashboard')
+  // Bumped when another computer's changes arrive, so the open view reloads them.
+  const [revision, setRevision] = useState(0)
+  const [remoteNotice, setRemoteNotice] = useState(false)
+  useEffect(
+    () =>
+      window.hub.onSettingsChanged((s) => {
+        applyTheme(s.theme)
+        setRemoteNotice(true)
+        setTimeout(() => setRemoteNotice(false), 4000)
+        // Settings may hold unsaved edits, so it keeps its form until the user leaves it.
+        setRevision((r) => r + 1)
+      }),
+    []
+  )
   const current = VIEWS.find((v) => v.id === view)!
 
   const body = (): React.JSX.Element => {
@@ -57,12 +72,17 @@ export function App(): React.JSX.Element {
       </nav>
       <main className="content">
         {/* The key replays the entrance animation on every view change. */}
-        <div className="view" key={view}>
+        <div className="view" key={view === 'settings' ? view : `${view}-${revision}`}>
           <h1 className="title">{current.label}</h1>
           {body()}
         </div>
       </main>
       <UpdateBanner />
+      {remoteNotice && (
+        <div className="sync-toast" role="status">
+          Changes from your other computer were applied.
+        </div>
+      )}
     </div>
   )
 }
