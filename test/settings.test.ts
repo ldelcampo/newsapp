@@ -17,7 +17,7 @@ describe('normalizeSettings', () => {
     const s = normalizeSettings({ topics: [' AI ', '', 3], newsLanguages: ['es', 'xx'], theme: 'neon' })
     expect(s.topics).toEqual(['AI'])
     expect(s.newsLanguages).toEqual(['es'])
-    expect(s.theme).toBe('system')
+    expect(s.theme).toBe('dark')
   })
 
   it('falls back to English when no language is left', () => {
@@ -33,7 +33,9 @@ describe('SettingsStore', () => {
       displayName: 'Luis',
       topics: ['economía'],
       newsLanguages: ['es', 'en'],
-      theme: 'dark'
+      theme: 'dark',
+      newsServerUrl: '',
+      customSources: []
     })
   })
 
