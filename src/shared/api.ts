@@ -21,6 +21,10 @@ export type SourceTest = { ok: true; count: number; sample: string[] } | { ok: f
 
 export type UpdateState =
   | { status: 'idle' | 'checking' | 'current' }
+  /** No build has been published yet. */
+  | { status: 'none' }
+  /** Running from source, which never updates itself. */
+  | { status: 'dev' }
   | { status: 'downloading'; percent: number }
   | { status: 'ready'; version: string }
   | { status: 'error'; message: string }

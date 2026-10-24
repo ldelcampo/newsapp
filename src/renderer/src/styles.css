@@ -426,3 +426,7 @@ button.chip { font: inherit; color: var(--fg); }
 :root { --cloud: #ffffff; --cloud-edge: rgba(40, 56, 120, 0.22); --moon: #8293d6; --flake: #7f9be0; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --cloud: #c9d3f5; --cloud-edge: transparent; --moon: #dfe6ff; --flake: #ffffff; } }
 :root[data-theme='dark'] { --cloud: #c9d3f5; --cloud-edge: transparent; --moon: #dfe6ff; --flake: #ffffff; }
+
+.update-state { font-size: 0.85rem; color: var(--muted); animation: rise 0.35s var(--ease); }
+.update-state.current, .update-state.none, .update-state.ready { color: var(--ok); }
+.update-state.error { color: var(--bad); }
