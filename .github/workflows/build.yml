@@ -21,6 +21,9 @@ jobs:
         # build on version tags, or from "Run workflow" with all_platforms ticked.
         os: ${{ fromJSON((startsWith(github.ref, 'refs/tags/v') || inputs.all_platforms) && '["macos-latest","windows-latest","ubuntu-latest"]' || '["macos-latest"]') }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      # Writing is only used to publish beta releases from main (Luis, 2026-10-24).
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,10 +60,22 @@ jobs:
           fi
           echo "::notice::Signing as $(echo "$ids" | grep 'Developer ID Application' | head -1)"
           echo "signed=true" >> "$GITHUB_OUTPUT"
+      - name: Number the beta
+        id: beta
+        # Every merge to main becomes a signed beta that installed apps update to.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.os == 'macOS' && steps.cert.outputs.signed == 'true'
+        shell: bash
+        run: |
+          version="0.1.${{ github.run_number }}"
+          npm version "$version" --no-git-tag-version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::Publishing beta $version"
       - name: Build installer
         shell: bash
         env:
           SIGN_MAC: ${{ steps.cert.outputs.signed }}
+          PUBLISH: ${{ steps.beta.outputs.version != '' }}
+          GH_TOKEN: ${{ steps.beta.outputs.version != '' && github.token || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -74,7 +89,8 @@ jobs:
           set -o pipefail
           if [ "$SIGN_MAC" = "true" ]; then
             echo "Signing with Developer ID and notarizing"
-            cmd="npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true"
+            script=dist; [ "$PUBLISH" = "true" ] && script=dist:publish
+            cmd="npm run $script -- -c.mac.notarize=true -c.forceCodeSigning=true"
           else
             echo "No signing certificate: unsigned (Windows/Linux) or ad-hoc (macOS)"
             export CSC_IDENTITY_AUTO_DISCOVERY=false
