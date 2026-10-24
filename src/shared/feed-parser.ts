@@ -50,6 +50,28 @@ function toIso(date: string): string | null {
   return Number.isNaN(t) ? null : new Date(t).toISOString()
 }
 
+/** First https image among the places feeds put them: media:content/thumbnail, enclosures, or an img in the HTML. */
+export function findImage(it: any): string | undefined {
+  const urls: string[] = []
+  const add = (v: unknown): void => {
+    for (const m of asArray(v as any)) {
+      if (!m || typeof m !== 'object') continue
+      const type = String(m['@type'] ?? '')
+      const medium = String(m['@medium'] ?? '')
+      if (m['@url'] && (!type || type.startsWith('image') || medium === 'image')) urls.push(m['@url'])
+      if (m['media:thumbnail']) add(m['media:thumbnail'])
+    }
+  }
+  add(it['media:content'])
+  add(it['media:thumbnail'])
+  add(it['media:group']?.['media:content'])
+  add(it.enclosure)
+  for (const l of asArray(it.link)) if (l && typeof l === 'object' && l['@rel'] === 'enclosure' && String(l['@type'] ?? '').startsWith('image')) urls.push(l['@href'])
+  const html = text(it['content:encoded']) || text(it.description) || text(it.content) || text(it.summary)
+  for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) urls.push(m[1])
+  return urls.map((u) => u.replace(/&amp;/g, '&')).find((u) => u.startsWith('https://'))
+}
+
 function atomLink(links: unknown): string {
   const all = asArray(links as Record<string, string> | Record<string, string>[])
   const alt = all.find((l) => !l['@rel'] || l['@rel'] === 'alternate') ?? all[0]
@@ -69,7 +91,8 @@ export function parseFeed(xml: string): ParsedFeed {
         title: stripHtml(text(it.title)),
         summary: stripHtml(text(it.description)).slice(0, 400),
         url: text(it.link) || text(it.guid),
-        publishedAt: toIso(text(it.pubDate) || text(it['dc:date'])) ?? ''
+        publishedAt: toIso(text(it.pubDate) || text(it['dc:date'])) ?? '',
+        imageUrl: findImage(it)
       }))
     }
   }
@@ -83,7 +106,8 @@ export function parseFeed(xml: string): ParsedFeed {
         title: stripHtml(text(it.title)),
         summary: stripHtml(text(it.description)).slice(0, 400),
         url: text(it.link) || it['@rdf:about'] || '',
-        publishedAt: toIso(text(it['dc:date'])) ?? ''
+        publishedAt: toIso(text(it['dc:date'])) ?? '',
+        imageUrl: findImage(it)
       }))
     }
   }
@@ -97,7 +121,8 @@ export function parseFeed(xml: string): ParsedFeed {
         title: stripHtml(text(it.title)),
         summary: stripHtml(text(it.summary) || text(it.content)).slice(0, 400),
         url: atomLink(it.link),
-        publishedAt: toIso(text(it.published) || text(it.updated)) ?? ''
+        publishedAt: toIso(text(it.published) || text(it.updated)) ?? '',
+        imageUrl: findImage(it)
       }))
     }
   }
@@ -122,8 +147,9 @@ function hash(s: string): string {
 export function toArticles(source: Source, feed: ParsedFeed, now = new Date()): Article[] {
   return feed.items
     .filter((it) => it.title && it.url)
-    .map((it) => ({
+    .map(({ imageUrl, ...it }) => ({
       ...it,
+      ...(imageUrl ? { imageUrl } : {}),
       // Undated items count as just published, so they are not buried.
       publishedAt: it.publishedAt || now.toISOString(),
       id: `${source.id}-${hash(it.url)}`,

@@ -25,3 +25,10 @@ export function timeAgo(iso: string, now = Date.now()): string {
   if (h < 24) return `${h} h ago`
   return `${Math.round(h / 24)} d ago`
 }
+
+export function timeUntil(iso: string, now = Date.now()): string {
+  const min = Math.ceil((Date.parse(iso) - now) / 60000)
+  if (min <= 0) return 'now'
+  if (min < 60) return `in ${min} min`
+  return `in ${Math.round(min / 60)} h`
+}

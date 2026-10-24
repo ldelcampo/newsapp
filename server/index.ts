@@ -1,42 +1,28 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { fetchSource } from '../src/shared/feed-parser'
 import { DEFAULT_SOURCES, type Article } from '../src/shared/news'
+import { PoliteFetcher } from '../src/shared/polite-fetch'
 
 const PORT = Number(process.env.PORT ?? 8787)
 const REFRESH_MINUTES = Number(process.env.REFRESH_MINUTES ?? 15)
 /** Articles older than this are dropped. */
 const KEEP_HOURS = 72
 
-interface SourceStatus {
-  ok: boolean
-  count: number
-  error?: string
-  checkedAt: string
-}
-
+// Same per-feed limits as the app: 15 minutes minimum, conditional requests, backoff.
+const fetcher = new PoliteFetcher()
 let articles: Article[] = []
-const status = new Map<string, SourceStatus>()
 let lastRefresh: string | null = null
 
 async function refresh(): Promise<void> {
   const cutoff = Date.now() - KEEP_HOURS * 3_600_000
-  const results = await Promise.allSettled(DEFAULT_SOURCES.map((s) => fetchSource(s)))
+  const results = await Promise.allSettled(DEFAULT_SOURCES.map((s) => fetcher.get(s)))
   const fresh: Article[] = []
   results.forEach((r, i) => {
-    const source = DEFAULT_SOURCES[i]
-    const checkedAt = new Date().toISOString()
-    if (r.status === 'fulfilled') {
-      fresh.push(...r.value)
-      status.set(source.id, { ok: true, count: r.value.length, checkedAt })
-    } else {
-      status.set(source.id, { ok: false, count: 0, error: String(r.reason?.message ?? r.reason), checkedAt })
-      // Keep the last good articles of a source that is briefly down.
-      fresh.push(...articles.filter((a) => a.sourceId === source.id))
-    }
+    // Keep the last good articles of a source that is briefly down.
+    fresh.push(...(r.status === 'fulfilled' ? r.value : articles.filter((a) => a.sourceId === DEFAULT_SOURCES[i].id)))
   })
   articles = fresh.filter((a) => Date.parse(a.publishedAt) >= cutoff).sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
   lastRefresh = new Date().toISOString()
-  const failed = [...status].filter(([, s]) => !s.ok).map(([id]) => id)
+  const failed = DEFAULT_SOURCES.filter((s) => !fetcher.status(s).ok).map((s) => s.id)
   console.log(`[${lastRefresh}] ${articles.length} articles from ${DEFAULT_SOURCES.length - failed.length}/${DEFAULT_SOURCES.length} sources${failed.length ? `; failed: ${failed.join(', ')}` : ''}`)
 }
 
@@ -53,7 +39,12 @@ export function handle(req: IncomingMessage, res: ServerResponse): void {
     case '/health':
       return send(res, 200, { ok: true, lastRefresh, articles: articles.length })
     case '/api/sources':
-      return send(res, 200, { sources: DEFAULT_SOURCES.map((s) => ({ ...s, status: status.get(s.id) ?? null })) })
+      return send(res, 200, {
+        sources: DEFAULT_SOURCES.map(({ apiKey: _key, ...s }) => {
+          const { id: _id, name: _name, ...status } = fetcher.status(s)
+          return { ...s, status: lastRefresh ? status : null }
+        })
+      })
     case '/api/articles': {
       const langs = url.searchParams.get('lang')?.split(',').filter(Boolean)
       const since = url.searchParams.get('since')

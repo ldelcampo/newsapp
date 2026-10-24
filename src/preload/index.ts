@@ -6,6 +6,7 @@ const api: HubApi = {
   saveSettings: (next) => ipcRenderer.invoke('settings:save', next),
   appInfo: () => ipcRenderer.invoke('app:info'),
   loadNews: () => ipcRenderer.invoke('news:load'),
+  sourceStatuses: () => ipcRenderer.invoke('news:source-statuses'),
   testSource: (source) => ipcRenderer.invoke('news:test-source', source),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   getUpdate: () => ipcRenderer.invoke('update:get'),

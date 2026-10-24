@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:media="http://search.yahoo.com/mrss/">
   <channel>
     <title>Example News</title>
     <language>es-mx</language>
@@ -8,10 +8,12 @@
       <link>https://example.com/banxico</link>
       <description><![CDATA[<p>La <b>economía</b> mexicana &amp; los mercados.</p>]]></description>
       <pubDate>Thu, 23 Oct 2026 18:00:00 GMT</pubDate>
+      <media:content url="https://img.example.com/banxico.jpg?w=800&amp;h=450" medium="image" width="800"/>
     </item>
     <item>
       <title>Sin fecha</title>
       <link>https://example.com/undated</link>
+      <description><![CDATA[<img src="http://insecure.example/x.jpg"><img src="https://img.example.com/inline.png"> Texto]]></description>
     </item>
     <item>
       <title></title>

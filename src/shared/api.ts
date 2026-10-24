@@ -1,4 +1,4 @@
-import type { Source } from './news'
+import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
 
@@ -11,6 +11,8 @@ export interface NewsResult {
   via: 'server' | 'this computer'
   /** Human-readable problems with the server or the user's own sources. */
   problems: string[]
+  /** Latest fetch result per source. */
+  sources: SourceStatus[]
   articles: RankedArticle[]
 }
 
@@ -28,6 +30,8 @@ export interface HubApi {
   saveSettings(next: Settings): Promise<Settings>
   appInfo(): Promise<{ version: string; platform: string; dataDir: string }>
   loadNews(): Promise<NewsResult>
+  /** Status per source from the latest news load in this session. */
+  sourceStatuses(): Promise<SourceStatus[]>
   testSource(source: Source): Promise<SourceTest>
   openExternal(url: string): Promise<void>
   getUpdate(): Promise<UpdateState>

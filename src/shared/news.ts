@@ -26,6 +26,20 @@ export interface Article {
   url: string
   /** ISO timestamp. */
   publishedAt: string
+  /** Lead image, when the feed provides one. */
+  imageUrl?: string
+}
+
+/** How one source did on its latest fetch. */
+export interface SourceStatus {
+  id: string
+  name: string
+  ok: boolean
+  count: number
+  error?: string
+  checkedAt: string
+  /** Earliest time this source will be asked again. */
+  nextCheckAt?: string
 }
 
 export const LEANS: { value: Lean; label: string }[] = [

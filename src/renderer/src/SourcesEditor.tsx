@@ -1,7 +1,27 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { SourceTest } from '@shared/api'
-import { DEFAULT_SOURCES, LEANS, type Lean, type Source } from '@shared/news'
+import { DEFAULT_SOURCES, LEANS, type Lean, type Source, type SourceStatus } from '@shared/news'
+import { Icon } from './Icon'
+import { timeAgo, timeUntil } from './useNews'
 import { NEWS_LANGUAGES } from '@shared/settings'
+
+function StatusLine({ status }: { status?: SourceStatus }): React.JSX.Element {
+  if (!status) return <span className="source-state">Not checked yet</span>
+  const next = status.nextCheckAt ? ` · next check ${timeUntil(status.nextCheckAt)}` : ''
+  return status.ok ? (
+    <span className="source-state">
+      Working · {status.count} stories · checked {timeAgo(status.checkedAt)}
+      {next}
+    </span>
+  ) : (
+    <span className="source-state fail">
+      Failing · {status.error} · checked {timeAgo(status.checkedAt)}
+      {next}
+    </span>
+  )
+}
+
+const dotClass = (s?: SourceStatus): string => (s ? (s.ok ? 'dot ok' : 'dot fail') : 'dot')
 
 const EMPTY = { name: '', url: '', language: 'en', region: '', lean: 'unrated' as Lean, apiKey: '', apiKeyParam: '' }
 
@@ -9,6 +29,16 @@ export function SourcesEditor({ sources, onChange }: { sources: Source[]; onChan
   const [draft, setDraft] = useState(EMPTY)
   const [test, setTest] = useState<SourceTest | null>(null)
   const [testing, setTesting] = useState(false)
+  const [statuses, setStatuses] = useState<SourceStatus[]>([])
+  const [checking, setChecking] = useState(false)
+  useEffect(() => void window.hub.sourceStatuses().then(setStatuses), [])
+  const statusOf = (id: string): SourceStatus | undefined => statuses.find((s) => s.id === id)
+  const working = DEFAULT_SOURCES.filter((s) => statusOf(s.id)?.ok).length
+  const checkNow = async (): Promise<void> => {
+    setChecking(true)
+    setStatuses((await window.hub.loadNews()).sources)
+    setChecking(false)
+  }
 
   const candidate = (): Source => ({
     id: `custom-${draft.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`,
@@ -39,12 +69,27 @@ export function SourcesEditor({ sources, onChange }: { sources: Source[]; onChan
 
   return (
     <div className="sources">
+      <div className="sources-head">
+        <span className="muted small">
+          {statuses.length ? `${working} of ${DEFAULT_SOURCES.length} included sources working` : 'Included sources'}. Each source is asked at most every 15 minutes,
+          and less often if it asks us to slow down, so refreshing is always safe.
+        </span>
+        <button type="button" className="ghost" onClick={checkNow} disabled={checking}>
+          <Icon name="refresh" className={checking ? 'spin' : ''} />
+          Check now
+        </button>
+      </div>
       <details>
         <summary>Included sources ({DEFAULT_SOURCES.length})</summary>
         <ul className="source-list">
           {DEFAULT_SOURCES.map((s) => (
-            <li key={s.id}>
-              {s.name} <span className="muted small">· {s.language.toUpperCase()} · {s.region} · {LEANS.find((l) => l.value === s.lean)?.label}</span>
+            <li key={s.id} className="source-row">
+              <span className={dotClass(statusOf(s.id))} />
+              <span>{s.name}</span>
+              <span className="muted small">
+                {s.language.toUpperCase()} · {s.region} · {LEANS.find((l) => l.value === s.lean)?.label}
+              </span>
+              <StatusLine status={statusOf(s.id)} />
             </li>
           ))}
         </ul>
@@ -53,8 +98,13 @@ export function SourcesEditor({ sources, onChange }: { sources: Source[]; onChan
       {sources.length > 0 && (
         <ul className="source-list">
           {sources.map((s) => (
-            <li key={s.id}>
-              {s.name} <span className="muted small">· {s.language.toUpperCase()} · {s.region}</span>
+            <li key={s.id} className="source-row">
+              <span className={dotClass(statusOf(s.id))} />
+              <span>{s.name}</span>
+              <span className="muted small">
+                {s.language.toUpperCase()} · {s.region}
+              </span>
+              <StatusLine status={statusOf(s.id)} />
               <button type="button" className="link" onClick={() => onChange(sources.filter((x) => x.id !== s.id))}>
                 Remove
               </button>

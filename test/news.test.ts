@@ -17,8 +17,13 @@ describe('parseFeed', () => {
       title: 'Banxico recorta la tasa de interés',
       summary: 'La economía mexicana & los mercados.',
       url: 'https://example.com/banxico',
-      publishedAt: '2026-10-23T18:00:00.000Z'
+      publishedAt: '2026-10-23T18:00:00.000Z',
+      imageUrl: 'https://img.example.com/banxico.jpg?w=800&h=450'
     })
+  })
+
+  it('takes an https image from inline HTML when there is no media tag', () => {
+    expect(parseFeed(fixture('rss2.xml')).items[1].imageUrl).toBe('https://img.example.com/inline.png')
   })
 
   it('reads Atom and picks the alternate link', () => {

@@ -51,6 +51,7 @@ app.whenReady().then(() => {
     return saved
   })
   ipcMain.handle('news:load', () => news.load(store.load()))
+  ipcMain.handle('news:source-statuses', async () => (news.lastSources.length ? news.lastSources : (await news.load(store.load())).sources))
   ipcMain.handle('news:test-source', (_e, source: unknown) => {
     // Reuse settings validation so the renderer cannot hand us a malformed source.
     const [clean] = normalizeSettings({ customSources: [source] }).customSources
