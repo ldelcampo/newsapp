@@ -443,3 +443,7 @@ button.chip { font: inherit; color: var(--fg); }
 .avatar.provider-google { background: linear-gradient(135deg, #4285f4, #34a853); }
 .avatar.provider-microsoft { background: linear-gradient(135deg, #0078d4, #50e6ff); }
 .add-account { flex-wrap: wrap; }
+
+.imap-form { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; animation: rise 0.4s var(--ease) backwards; }
+.imap-form h3 { margin: 0; font-size: 1rem; }
+.imap-form details > summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; margin-bottom: 12px; }

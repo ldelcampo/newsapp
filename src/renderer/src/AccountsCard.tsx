@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { providerLabel, type Account, type Provider } from '@shared/accounts'
 import { Icon } from './Icon'
+import { ImapAccountForm } from './ImapAccountForm'
 
 const clean = (e: unknown): string => (e instanceof Error ? e.message : String(e)).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 
@@ -9,6 +10,8 @@ export function AccountsCard(): React.JSX.Element {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [busy, setBusy] = useState('')
   const [status, setStatus] = useState<{ text: string; error?: boolean }>({ text: '' })
+  // The IMAP form is open for a new account, or for a new password on an existing one.
+  const [imapFor, setImapFor] = useState<'new' | Account | null>(null)
 
   useEffect(() => void window.hub.accounts().then(setAccounts), [])
 
@@ -54,7 +57,16 @@ export function AccountsCard(): React.JSX.Element {
               </span>
             </span>
             {a.status === 'reauth' ? (
-              <button type="button" className="primary" disabled={!!busy} onClick={() => void run(a.id, 'Finish signing in in your browser…', async () => (await window.hub.reconnectAccount(a.id), `Reconnected ${a.email}.`))}>
+              <button
+                type="button"
+                className="primary"
+                disabled={!!busy}
+                onClick={() =>
+                  a.provider === 'imap'
+                    ? setImapFor(a)
+                    : void run(a.id, 'Finish signing in in your browser…', async () => (await window.hub.reconnectAccount(a.id), `Reconnected ${a.email}.`))
+                }
+              >
                 Reconnect
               </button>
             ) : (
@@ -84,9 +96,24 @@ export function AccountsCard(): React.JSX.Element {
           </li>
         ))}
       </ul>
+      {imapFor && (
+        <ImapAccountForm
+          key={imapFor === 'new' ? 'new' : imapFor.id}
+          account={imapFor === 'new' ? undefined : imapFor}
+          onCancel={() => setImapFor(null)}
+          onDone={(text) => {
+            setImapFor(null)
+            setStatus({ text })
+            void window.hub.accounts().then(setAccounts)
+          }}
+        />
+      )}
       <div className="actions add-account">
         <button type="button" className="ghost" disabled={!!busy} onClick={() => void add('google')}>
           <Icon name="plus" /> {busy === 'add:google' ? 'Waiting for Google…' : 'Add Google account'}
+        </button>
+        <button type="button" className="ghost" disabled={!!busy || imapFor !== null} onClick={() => setImapFor('new')}>
+          <Icon name="plus" /> Add IONOS or other mail
         </button>
       </div>
       <small className="muted">Turn Calendar off for a mail-only account. Turning a switch back on may ask you to sign in again.</small>

@@ -209,9 +209,9 @@ export class ImapConnector implements Connector {
     return account
   }
 
-  /** Looks for a calendar again when the user turns the calendar switch on. */
+  /** Looks for a calendar when the user turns the calendar switch on. */
   async reconsent(acc: Account): Promise<Account> {
-    if (!acc.imap) return acc
+    if (!acc.imap || !acc.calendar || acc.imap.caldavUrl) return acc
     const found = await findCalendars(acc.imap, acc.email, this.password(acc))
     if (!found) throw new Error('This provider offers no calendar we can read. Add its CalDAV address to use one.')
     return { ...acc, imap: { ...acc.imap, caldavUrl: found.url } }
