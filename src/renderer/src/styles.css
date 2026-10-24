@@ -431,3 +431,32 @@ button.chip { font: inherit; color: var(--fg); }
 .update-state.current, .update-state.none, .update-state.ready { color: var(--ok); }
 .update-state.error { color: var(--bad); }
 .update-state.move { color: var(--warn); }
+
+/* ---------- Jira tickets ---------- */
+.ticket { align-items: flex-start; gap: 12px; }
+.urgency-dot { width: 9px; height: 9px; margin-top: 7px; border-radius: 50%; flex: none; background: var(--line-strong); }
+.urgency-now .urgency-dot { background: var(--bad); box-shadow: 0 0 0 0 var(--bad); animation: urgent 2.4s infinite; }
+.urgency-soon .urgency-dot { background: var(--warn); }
+@keyframes urgent { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bad) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
+.ticket-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.74rem; color: var(--fg); font-weight: 600; }
+.reason { border: 1px solid var(--line-strong); border-radius: 99px; padding: 1px 9px; }
+.urgency-now .reason:first-of-type { border-color: color-mix(in srgb, var(--bad) 50%, transparent); color: var(--bad); }
+.pill { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; font-size: 0.72rem; font-weight: 700; margin-left: 8px; }
+.pill.urgent { background: var(--bad); color: #fff; }
+.ticket-group + .ticket-group { margin-top: 18px; }
+.urgency-head { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 0.82rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.urgency-head.urgency-now { color: var(--bad); }
+.urgency-head .count { font-variant-numeric: tabular-nums; opacity: 0.7; }
+.project-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.project-list li { display: inline-flex; align-items: center; gap: 6px; }
+.project-list select { padding: 4px 8px; font-size: 0.8rem; }
+.project-list .count { font-size: 0.75rem; color: var(--muted); }
+.site-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.site-list li { display: flex; align-items: center; gap: 10px; }
+.site-list li > span:nth-child(2) { flex: 1; }
+.jira-form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+.radio { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; line-height: 1.4; }
+.radio input { accent-color: var(--accent); margin-top: 3px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row input { flex: 1; }
+@media (prefers-reduced-motion: reduce) { .urgency-now .urgency-dot { animation: none; } }

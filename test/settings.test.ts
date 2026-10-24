@@ -37,7 +37,10 @@ describe('SettingsStore', () => {
       onlyMyTopics: false,
       newsServerUrl: '',
       customSources: [],
-      dashboard: DEFAULT_SETTINGS.dashboard
+      dashboard: DEFAULT_SETTINGS.dashboard,
+      jiraSites: [],
+      projectWeights: {},
+      ticketRanking: 'local'
     })
   })
 

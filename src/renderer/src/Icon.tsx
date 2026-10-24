@@ -18,6 +18,8 @@ const PATHS: Record<string, string> = {
   currency: 'M12 3v18m4-14.5C15 5.5 13.6 5 12 5c-2.2 0-4 1.1-4 3s1.8 2.6 4 3 4 1.1 4 3-1.8 3-4 3c-1.7 0-3.2-.6-4-1.6',
   weather: 'M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17M17 7l1.4-1.4M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',
   clocks: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v4l3 2',
+  work: 'M4 8h16v11H4V8Zm5 0V5h6v3M4 13h16',
+  tickets: 'M4 8h16v11H4V8Zm5 0V5h6v3M4 13h16',
   meetings: 'M5 5h14v15H5V5Zm0 5h14M9 3v4m6-4v4'
 }
 

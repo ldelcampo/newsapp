@@ -3,12 +3,14 @@ import { DashboardView } from './DashboardView'
 import { Icon } from './Icon'
 import { NewsView } from './NewsView'
 import { SettingsView } from './SettingsView'
+import { WorkView } from './Tickets'
 import { UpdateBanner } from './UpdateBanner'
 
-type View = 'dashboard' | 'mail' | 'calendar' | 'news' | 'settings'
+type View = 'dashboard' | 'work' | 'mail' | 'calendar' | 'news' | 'settings'
 
 const VIEWS: { id: View; label: string; comingIn?: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
+  { id: 'work', label: 'Work' },
   { id: 'news', label: 'News' },
   { id: 'mail', label: 'Mail', comingIn: 'Microsoft, Gmail and IONOS mail arrive in slices 5 to 7.' },
   { id: 'calendar', label: 'Calendar', comingIn: 'Calendars arrive with their accounts in slices 5 to 7.' },
@@ -29,6 +31,7 @@ export function App(): React.JSX.Element {
       )
     if (view === 'dashboard') return <DashboardView onOpen={setView} />
     if (view === 'news') return <NewsView />
+    if (view === 'work') return <WorkView onOpen={setView} />
     return <SettingsView />
   }
 
