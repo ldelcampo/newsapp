@@ -110,6 +110,8 @@ jobs:
             dist/*.dmg
             dist/*.AppImage
           if-no-files-found: error
+          # Installers expire after 3 days so old builds do not pile up.
+          retention-days: 3
 
   news-server:
     runs-on: ubuntu-latest
