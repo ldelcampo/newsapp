@@ -16,6 +16,11 @@ export class AccountService {
     private readonly now: () => number = Date.now
   ) {}
 
+  /** Providers this build can connect. */
+  providers(): Provider[] {
+    return (Object.keys(this.connectors) as Provider[]).filter((p) => this.connectors[p])
+  }
+
   list(): Account[] {
     return this.store.list()
   }

@@ -40,6 +40,17 @@ The build needs a Google OAuth client of type **Desktop app**:
 
 Google treats a Desktop app's client secret as non-confidential, which is why it may ship inside the app. While the app is in Testing, only listed test users can sign in and Google expires their sign-in after 7 days, so the account asks to reconnect weekly. Publishing to everyone needs Google's verification, and `gmail.readonly` is a restricted scope that also needs a yearly third-party security assessment.
 
+## Microsoft accounts
+
+Outlook mail and calendar (work, school and personal accounts) sign in through the system browser with MSAL; tokens are encrypted with the OS keychain and stay on the computer. The app needs a Microsoft Entra app registration, set once by the maintainer:
+
+1. In [Entra admin center](https://entra.microsoft.com), App registrations, New registration. Name: Information Hub. Supported account types: any organizational directory and personal Microsoft accounts.
+2. Redirect URI: platform "Public client/native (mobile & desktop)", value `http://localhost`.
+3. API permissions, Microsoft Graph, Delegated: `Mail.Read`, `Calendars.Read`, `offline_access` (keep `User.Read`).
+4. Copy the Application (client) ID into `MICROSOFT_CLIENT_ID` in `src/main/accounts/microsoft.ts`. It is not a secret. For a quick test, set `HUB_MICROSOFT_CLIENT_ID` when running `npm run dev`.
+
+Some organizations only allow apps their admin approved, or from a verified publisher; the app then says to ask IT.
+
 ## Layout
 
 - `src/main`: Electron main process. Owns files, network and credentials.

@@ -554,3 +554,52 @@ button.chip { font: inherit; color: var(--fg); }
 .imap-form { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; animation: rise 0.4s var(--ease) backwards; }
 .imap-form h3 { margin: 0; font-size: 1rem; }
 .imap-form details > summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; margin-bottom: 12px; }
+
+/* ---------- Mail and calendar ---------- */
+.count { font: 600 0.72rem var(--body); color: var(--on-accent); background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 99px; padding: 2px 8px; }
+.mail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mail li { display: flex; gap: 10px; padding: 10px 0; animation: rise 0.5s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 40ms); }
+.mail li + li { border-top: 1px solid var(--line); }
+.mail .dot { width: 7px; height: 7px; margin-top: 8px; flex: none; border-radius: 50%; }
+.mail li.unread .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.mail-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.mail-top { display: flex; justify-content: space-between; gap: 10px; }
+.mail .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.mail li.unread .from { color: var(--fg); font-weight: 600; }
+.mail .subject { font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail.compact .subject { font-size: 0.9rem; }
+.acct { align-self: flex-start; font-size: 0.72rem; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 0 8px; }
+.acct-microsoft { border-color: rgba(0, 120, 212, 0.45); }
+.acct-google { border-color: rgba(66, 133, 244, 0.45); }
+.problems { list-style: none; margin: 0; padding: 0; }
+
+.next-meeting { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 12px; background: var(--accent-soft); border: 1px solid transparent; transition: border-color 0.4s var(--ease); }
+.next-meeting .ring { width: 54px; height: 54px; flex: none; transform: rotate(-90deg); }
+.ring-track { fill: none; stroke: var(--line-strong); stroke-width: 5; }
+.ring-fill { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset 1s var(--ease); }
+.next-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.countdown { font: 600 0.8rem var(--body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+.next-title { font-family: var(--display); font-weight: 500; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.next-meeting.soon { border-color: var(--line-strong); }
+.next-meeting.imminent { border-color: var(--warn); animation: meeting-pulse 1.6s ease-in-out infinite; }
+.next-meeting.imminent .ring-fill, .next-meeting.imminent .countdown { stroke: var(--warn); color: var(--warn); }
+.next-meeting.imminent .ring { animation: ring-beat 1.6s ease-in-out infinite; }
+.next-meeting.now { border-color: var(--ok); }
+.next-meeting.now .ring-fill, .next-meeting.now .countdown { stroke: var(--ok); color: var(--ok); }
+@keyframes meeting-pulse { 50% { box-shadow: 0 0 0 6px transparent, 0 0 24px -6px var(--warn); } }
+@keyframes ring-beat { 50% { transform: rotate(-90deg) scale(1.08); } }
+.join { padding: 6px 14px; flex: none; }
+
+.events { display: flex; flex-direction: column; gap: 10px; }
+.events .day { margin: 4px 0 0; font: 600 0.75rem var(--body); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.events ol { list-style: none; margin: 0; padding: 0; }
+.events li { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.events li + li { border-top: 1px solid var(--line); }
+.event-time { min-width: 9.5em; flex: none; white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.88rem; }
+.event-body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.event-body .article-link { font-size: 0.95rem; }
+.live-event .event-time { color: var(--ok); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  .next-meeting.imminent, .next-meeting.imminent .ring, .mail li { animation: none; }
+}

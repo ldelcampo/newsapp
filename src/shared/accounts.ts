@@ -226,3 +226,20 @@ export function normalizeImapInput(raw: unknown): ImapAccountInput | string {
   const accountId = str(r.accountId)
   return { email, name: str(r.name) || email, password: r.password, calendar: r.calendar !== false, imap, ...(accountId ? { accountId } : {}) }
 }
+
+export type MeetingPhase = 'later' | 'soon' | 'imminent' | 'now'
+
+/**
+ * Where a meeting stands, for the countdown: 'soon' within an hour, 'imminent' within 10 minutes,
+ * 'now' while it runs. `progress` runs 0→1 across the hour before the start (or across the
+ * meeting while it runs), which drives the countdown ring.
+ */
+export function meetingPhase(e: CalendarEvent, now: Date): { phase: MeetingPhase; minutes: number; progress: number } {
+  const t = now.getTime()
+  const start = Date.parse(e.start)
+  const end = Date.parse(e.end)
+  if (t >= start) return { phase: 'now', minutes: Math.max(0, Math.ceil((end - t) / 60_000)), progress: Math.min(1, (t - start) / Math.max(1, end - start)) }
+  const minutes = Math.ceil((start - t) / 60_000)
+  const phase = minutes <= 10 ? 'imminent' : minutes <= 60 ? 'soon' : 'later'
+  return { phase, minutes, progress: Math.max(0, 1 - (start - t) / 3_600_000) }
+}

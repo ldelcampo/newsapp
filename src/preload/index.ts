@@ -32,6 +32,7 @@ const api: HubApi = {
   hasJevKey: () => ipcRenderer.invoke('jev:has-key'),
   setJevKey: (key) => ipcRenderer.invoke('jev:set-key', key),
   accounts: () => ipcRenderer.invoke('accounts:list'),
+  accountProviders: () => ipcRenderer.invoke('accounts:providers'),
   addAccount: (provider, input) => ipcRenderer.invoke('accounts:add', provider, input),
   updateAccount: (id, patch) => ipcRenderer.invoke('accounts:update', id, patch),
   reconnectAccount: (id) => ipcRenderer.invoke('accounts:reconnect', id),
