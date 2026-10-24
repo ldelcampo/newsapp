@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WidgetService } from '../src/main/widget-service'
 import { normalizeSettings } from '../src/shared/settings'
-import { DEFAULT_DASHBOARD, normalizeDashboard, parsePlaces, parseRates, parseWeather } from '../src/shared/widgets'
+import { DEFAULT_DASHBOARD, normalizeDashboard, parsePlaces, parseRates, parseWeather, placeQuery } from '../src/shared/widgets'
 
 describe('dashboard settings', () => {
   it('starts with the default widgets', () => {
@@ -65,3 +65,21 @@ describe('widget data', () => {
     await expect(svc.rates('USD', ['EUR'])).rejects.toThrow('offline')
   })
 })
+
+describe('place search', () => {
+  const answer = {
+    results: [
+      { name: 'Monterrey', latitude: 25.67, longitude: -100.31, admin1: 'Nuevo León', country: 'Mexico', country_code: 'MX' },
+      { name: 'Monterrey', latitude: 4.87, longitude: -72.9, admin1: 'Casanare', country: 'Colombia', country_code: 'CO' }
+    ]
+  }
+  it('searches the name before the comma and narrows by the rest', () => {
+    expect(placeQuery(' Monterrey , Mexico ')).toEqual({ name: 'Monterrey', near: ['Mexico'] })
+    expect(parsePlaces(answer, ['mexico']).map((p) => p.name)).toEqual(['Monterrey, Nuevo León, Mexico'])
+    expect(parsePlaces(answer, ['nuevo leon'])).toHaveLength(1)
+    expect(parsePlaces(answer, ['CO'])[0].name).toBe('Monterrey, Casanare, Colombia')
+    // Nothing matches the extra words: show every result rather than none.
+    expect(parsePlaces(answer, ['Peru'])).toHaveLength(2)
+  })
+})
+
