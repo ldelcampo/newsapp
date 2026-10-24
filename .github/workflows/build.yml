@@ -64,6 +64,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Google "Desktop app" OAuth client, baked into the build. Without it, Add Google account explains it isn't set up.
+          MAIN_VITE_GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          MAIN_VITE_GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           # electron-builder skips signing on pull requests unless told otherwise.
           # Safe here: secrets are never passed to fork PRs.
           CSC_FOR_PULL_REQUEST: 'true'
