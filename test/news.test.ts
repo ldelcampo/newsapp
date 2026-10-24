@@ -79,6 +79,21 @@ describe('ranking', () => {
     expect(topicScore({ title: 'Weather', summary: '' }, ['economía'])).toBe(0)
   })
 
+  it('does not match a short topic inside a different word', () => {
+    // "Tech" used to match "techo" (roof) in a football story.
+    expect(topicScore({ title: 'Kevin Álvarez ve el techo de las Águilas muy lejos', summary: '' }, ['Tech'])).toBe(0)
+    expect(topicScore({ title: 'AI firms', summary: '' }, ['AI'])).toBe(2)
+    expect(topicScore({ title: 'Said the aide', summary: '' }, ['AI'])).toBe(0)
+    expect(topicScore({ title: 'New chips', summary: '' }, ['chip'])).toBe(2)
+  })
+
+  it('matches word forms and common aliases for broad topics', () => {
+    expect(topicScore({ title: 'Economic outlook dims', summary: '' }, ['economical'])).toBe(2)
+    expect(topicScore({ title: 'Las elecciones judiciales', summary: '' }, ['elección'])).toBe(2)
+    expect(topicScore({ title: 'Nvidia unveils a new chip', summary: '' }, ['Tech'])).toBe(2)
+    expect(topicScore({ title: 'Markets', summary: 'La inteligencia artificial avanza' }, ['IA'])).toBe(1)
+  })
+
   it('puts topic matches above newer non-matches', () => {
     const list = rankArticles([art('Celebrity news', 0), art('Old AI story', 30), art('Fresh AI story', 1)], ['AI'], ['en'], now)
     expect(list.map((a) => a.title)).toEqual(['Fresh AI story', 'Old AI story', 'Celebrity news'])

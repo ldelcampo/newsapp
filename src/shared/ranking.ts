@@ -13,19 +13,61 @@ export interface TopicMatch {
 }
 
 /**
- * The user's topics an article mentions. A topic matches when all its words appear
- * (prefix match, so stems and plurals work), in the title or anywhere in title plus summary.
+ * Whether a word in the story is the topic word or a form of it. Short words must match
+ * exactly or as a plural ("tech" is not "techo"); longer words may share a stem, so
+ * "economy" finds "economic" and "elección" finds "elecciones".
+ */
+export function sameWord(topicWord: string, word: string): boolean {
+  if (word === topicWord) return true
+  const [a, b] = topicWord.length <= word.length ? [topicWord, word] : [word, topicWord]
+  if (/^(s|es)$/.test(b.slice(a.length)) && b.startsWith(a)) return true
+  if (a.length < 5) return false
+  let common = 0
+  while (common < a.length && a[common] === b[common]) common++
+  return common >= 5 && common >= a.length - 3
+}
+
+/**
+ * Broad topics people often type, and the words stories use for them. A story matches the
+ * topic when it matches the topic itself or any of these.
+ */
+const ALIASES: Record<string, string[]> = {
+  tech: ['technology', 'tecnologia', 'software', 'startup', 'smartphone', 'artificial intelligence', 'inteligencia artificial', 'chip', 'semiconductor', 'cyber', 'ciberseguridad', 'apple', 'google', 'microsoft', 'nvidia', 'openai'],
+  tecnologia: ['tech', 'technology', 'software', 'startup', 'inteligencia artificial', 'artificial intelligence', 'ciberseguridad', 'semiconductor'],
+  ai: ['artificial intelligence', 'inteligencia artificial', 'ia', 'chatbot', 'openai', 'llm'],
+  ia: ['inteligencia artificial', 'artificial intelligence', 'ai', 'chatbot', 'openai'],
+  sports: ['sport', 'football', 'soccer', 'futbol', 'deporte', 'nba', 'nfl', 'tennis', 'olympic'],
+  deportes: ['deporte', 'futbol', 'liga mx', 'sports', 'football', 'soccer', 'tenis', 'beisbol'],
+  politics: ['political', 'election', 'government', 'congress', 'senate', 'politica', 'eleccion', 'gobierno'],
+  politica: ['politics', 'political', 'eleccion', 'gobierno', 'congreso', 'senado'],
+  economy: ['economic', 'inflation', 'gdp', 'interest rate', 'recession', 'economia', 'inflacion'],
+  economia: ['economy', 'economic', 'inflacion', 'pib', 'tasa de interes', 'recesion'],
+  health: ['salud', 'medical', 'disease', 'hospital', 'vaccine'],
+  salud: ['health', 'medico', 'enfermedad', 'hospital', 'vacuna'],
+  science: ['ciencia', 'research', 'scientists', 'space', 'nasa'],
+  ciencia: ['science', 'investigacion', 'cientificos', 'espacio', 'nasa']
+}
+
+/** The word lists that count as this topic: its own words, then any aliases. */
+function topicForms(topic: string): string[][] {
+  const own = words(topic)
+  if (own.length === 0) return []
+  return [own, ...(ALIASES[own.join(' ')] ?? []).map(words)]
+}
+
+/**
+ * The user's topics an article mentions. A topic matches when all its words (or all the
+ * words of one alias) appear, in the title or anywhere in title plus summary.
  */
 export function topicMatches(article: Pick<Article, 'title' | 'summary'>, topics: string[]): TopicMatch[] {
   const title = words(article.title)
-  const body = words(article.summary)
-  const has = (pool: string[], w: string): boolean => pool.some((p) => p.startsWith(w) || (w.length > 4 && w.startsWith(p) && p.length >= 4))
+  const all = [...title, ...words(article.summary)]
+  const has = (pool: string[], form: string[]): boolean => form.every((w) => pool.some((p) => sameWord(w, p)))
   const found: TopicMatch[] = []
   for (const topic of topics) {
-    const tw = words(topic)
-    if (tw.length === 0) continue
-    if (tw.every((w) => has(title, w))) found.push({ topic, inTitle: true })
-    else if (tw.every((w) => has(title, w) || has(body, w))) found.push({ topic, inTitle: false })
+    const forms = topicForms(topic)
+    if (forms.some((f) => has(title, f))) found.push({ topic, inTitle: true })
+    else if (forms.some((f) => has(all, f))) found.push({ topic, inTitle: false })
   }
   return found
 }
