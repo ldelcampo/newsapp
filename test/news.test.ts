@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { feedUrl, parseFeed, toArticles } from '../src/shared/feed-parser'
 import type { Article, Source } from '../src/shared/news'
-import { rankArticles, topicScore } from '../src/shared/ranking'
+import { filterArticles, rankArticles, topicScore } from '../src/shared/ranking'
 import { normalizeSettings } from '../src/shared/settings'
 
 const fixture = (name: string): string => readFileSync(join(__dirname, 'fixtures', name), 'utf8')
@@ -88,6 +88,42 @@ describe('ranking', () => {
   it('is newest first without topics, filters languages, and removes duplicate headlines', () => {
     const list = rankArticles([art('B', 5), art('A', 1), art('a', 2), art('Español', 0, 'es')], [], ['en'], now)
     expect(list.map((a) => a.title)).toEqual(['A', 'B'])
+  })
+
+  it('rates priority: topic in the headline or several topics is high, summary only is medium', () => {
+    const list = rankArticles(
+      [
+        { ...art('AI chips rally', 1), summary: '' },
+        { ...art('Markets today', 2), summary: 'Chipmakers lead on AI demand' },
+        { ...art('Tariffs hit Mexico', 3), summary: 'The economy slows' },
+        art('Celebrity news', 0)
+      ],
+      ['AI', 'Mexico', 'economy'],
+      ['en'],
+      now
+    )
+    const by = Object.fromEntries(list.map((a) => [a.title, a]))
+    expect(by['AI chips rally'].priority).toBe('high')
+    expect(by['Markets today'].priority).toBe('medium')
+    expect(by['Tariffs hit Mexico'].priority).toBe('high')
+    expect(by['Tariffs hit Mexico'].topics).toEqual(['Mexico', 'economy'])
+    expect(by['Celebrity news'].priority).toBe('low')
+  })
+
+  it('filters by only my topics, one topic, minimum priority and search', () => {
+    const list = rankArticles(
+      [{ ...art('AI chips rally', 1) }, { ...art('Markets today', 2), summary: 'AI demand' }, art('Mexico votes', 3), art('Celebrity news', 0)],
+      ['AI', 'Mexico'],
+      ['en'],
+      now
+    )
+    const titles = (f: Parameters<typeof filterArticles>[1]): string[] => filterArticles(list, f).map((a) => a.title)
+    expect(titles({})).toHaveLength(4)
+    expect(titles({ onlyMatches: true })).toEqual(['AI chips rally', 'Mexico votes', 'Markets today'])
+    expect(titles({ topic: 'Mexico' })).toEqual(['Mexico votes'])
+    expect(titles({ minPriority: 'high' })).toEqual(['AI chips rally', 'Mexico votes'])
+    expect(titles({ minPriority: 'medium', topic: 'AI' })).toEqual(['AI chips rally', 'Markets today'])
+    expect(titles({ query: 'CELEB' })).toEqual(['Celebrity news'])
   })
 })
 

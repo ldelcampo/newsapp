@@ -88,6 +88,12 @@ export function SettingsView(): React.JSX.Element {
           <small className="muted">Separate topics with commas. Stories that match them come first.</small>
         </label>
 
+        <label className="toggle">
+          <input id="onlyMyTopics" type="checkbox" checked={settings.onlyMyTopics} onChange={(e) => update({ onlyMyTopics: e.target.checked })} />
+          <span className="track" aria-hidden="true" />
+          Show only stories that match my topics, on the dashboard and in News
+        </label>
+
         <fieldset className="field">
           <legend>Languages</legend>
           <div className="chips">

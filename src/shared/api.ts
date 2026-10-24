@@ -1,6 +1,7 @@
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
+import type { Place, Rates, Weather } from './widgets'
 
 export interface NewsResult {
   /** When these articles were downloaded. */
@@ -34,6 +35,12 @@ export interface HubApi {
   sourceStatuses(): Promise<SourceStatus[]>
   testSource(source: Source): Promise<SourceTest>
   openExternal(url: string): Promise<void>
+  /** Exchange rates for the currency widget (cached for an hour). */
+  rates(base: string, symbols: string[]): Promise<Rates>
+  /** Weather for the weather widget (cached for 30 minutes). */
+  weather(place: Place): Promise<Weather>
+  /** Places matching a name, for choosing the weather location. */
+  findPlaces(query: string): Promise<Place[]>
   getUpdate(): Promise<UpdateState>
   checkForUpdate(): Promise<UpdateState>
   installUpdate(): Promise<void>

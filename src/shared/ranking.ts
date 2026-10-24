@@ -7,22 +7,49 @@ export function normalize(s: string): string {
 
 const words = (s: string): string[] => normalize(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean)
 
+export interface TopicMatch {
+  topic: string
+  inTitle: boolean
+}
+
 /**
- * How well an article matches the user's topics: 0 for none. A topic matches when all its
- * words appear (prefix match, so "econom" style stems and plurals work); title hits count double.
+ * The user's topics an article mentions. A topic matches when all its words appear
+ * (prefix match, so stems and plurals work), in the title or anywhere in title plus summary.
  */
-export function topicScore(article: Pick<Article, 'title' | 'summary'>, topics: string[]): number {
+export function topicMatches(article: Pick<Article, 'title' | 'summary'>, topics: string[]): TopicMatch[] {
   const title = words(article.title)
   const body = words(article.summary)
   const has = (pool: string[], w: string): boolean => pool.some((p) => p.startsWith(w) || (w.length > 4 && w.startsWith(p) && p.length >= 4))
-  let score = 0
+  const found: TopicMatch[] = []
   for (const topic of topics) {
     const tw = words(topic)
     if (tw.length === 0) continue
-    if (tw.every((w) => has(title, w))) score += 2
-    else if (tw.every((w) => has(title, w) || has(body, w))) score += 1
+    if (tw.every((w) => has(title, w))) found.push({ topic, inTitle: true })
+    else if (tw.every((w) => has(title, w) || has(body, w))) found.push({ topic, inTitle: false })
   }
-  return score
+  return found
+}
+
+/** How well an article matches the user's topics: 0 for none; title hits count double. */
+export function topicScore(article: Pick<Article, 'title' | 'summary'>, topics: string[]): number {
+  return topicMatches(article, topics).reduce((sum, m) => sum + (m.inTitle ? 2 : 1), 0)
+}
+
+/**
+ * High: a topic is in the headline, or several topics are mentioned.
+ * Medium: a topic is only in the summary. Low: none of the user's topics.
+ */
+export type Priority = 'high' | 'medium' | 'low'
+
+export const PRIORITIES: { value: Priority; label: string }[] = [
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' }
+]
+
+export function priorityOf(matches: TopicMatch[]): Priority {
+  if (matches.some((m) => m.inTitle) || matches.length >= 2) return 'high'
+  return matches.length === 1 ? 'medium' : 'low'
 }
 
 /** 1 for brand new, halving every `halfLifeHours`. */
@@ -34,6 +61,9 @@ export function freshness(publishedAt: string, now: Date, halfLifeHours = 12): n
 export interface RankedArticle extends Article {
   score: number
   matched: boolean
+  /** The user's topics this story mentions, in the user's words. */
+  topics: string[]
+  priority: Priority
 }
 
 /**
@@ -51,8 +81,39 @@ export function rankArticles(articles: Article[], topics: string[], languages: s
       return true
     })
     .map((a) => {
-      const t = topicScore(a, topics)
-      return { ...a, matched: t > 0, score: (t > 0 ? 10 + t : 0) + freshness(a.publishedAt, now) }
+      const m = topicMatches(a, topics)
+      const t = m.reduce((sum, x) => sum + (x.inTitle ? 2 : 1), 0)
+      return {
+        ...a,
+        matched: t > 0,
+        topics: m.map((x) => x.topic),
+        priority: priorityOf(m),
+        score: (t > 0 ? 10 + t : 0) + freshness(a.publishedAt, now)
+      }
     })
     .sort((a, b) => b.score - a.score)
+}
+
+export interface ArticleFilter {
+  /** Hide stories that match none of the user's topics. */
+  onlyMatches?: boolean
+  /** Keep stories that mention this topic; empty or missing means any topic. */
+  topic?: string
+  /** Lowest priority to show. */
+  minPriority?: Priority
+  query?: string
+}
+
+const RANK: Record<Priority, number> = { high: 2, medium: 1, low: 0 }
+
+export function filterArticles(articles: RankedArticle[], f: ArticleFilter): RankedArticle[] {
+  const q = normalize(f.query?.trim() ?? '')
+  const min = RANK[f.minPriority ?? 'low']
+  return articles.filter(
+    (a) =>
+      (!f.onlyMatches || a.matched) &&
+      (!f.topic || a.topics.includes(f.topic)) &&
+      RANK[a.priority] >= min &&
+      (!q || normalize(a.title).includes(q) || normalize(a.sourceName).includes(q))
+  )
 }

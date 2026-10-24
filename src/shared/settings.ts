@@ -1,4 +1,5 @@
 import { LEANS, type Source } from './news'
+import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
 
 export type Theme = 'system' | 'light' | 'dark'
 
@@ -7,21 +8,27 @@ export interface Settings {
   theme: Theme
   /** Topics the news ranking should favour, in the user's own words. */
   topics: string[]
+  /** Show only stories that match the topics, on the dashboard and in News. */
+  onlyMyTopics: boolean
   /** ISO 639-1 codes of the languages news may be in. */
   newsLanguages: string[]
   /** Where the shared news server runs; empty means this computer fetches the feeds itself. */
   newsServerUrl: string
   /** Sources this user added; the app fetches them itself. */
   customSources: Source[]
+  /** Dashboard widgets in display order. */
+  dashboard: Widget[]
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   displayName: '',
   theme: 'dark',
   topics: [],
+  onlyMyTopics: false,
   newsLanguages: ['en'],
   newsServerUrl: '',
-  customSources: []
+  customSources: [],
+  dashboard: DEFAULT_DASHBOARD
 }
 
 export const NEWS_LANGUAGES: { code: string; label: string }[] = [
@@ -62,6 +69,7 @@ export function normalizeSettings(raw: unknown): Settings {
     displayName: typeof r.displayName === 'string' ? r.displayName : DEFAULT_SETTINGS.displayName,
     theme,
     topics: strings(r.topics) ?? DEFAULT_SETTINGS.topics,
+    onlyMyTopics: r.onlyMyTopics === true,
     newsLanguages: langs && langs.length > 0 ? langs : DEFAULT_SETTINGS.newsLanguages,
     newsServerUrl:
       typeof r.newsServerUrl === 'string' && (r.newsServerUrl.trim() === '' || /^https?:\/\//.test(r.newsServerUrl.trim()))
@@ -69,6 +77,7 @@ export function normalizeSettings(raw: unknown): Settings {
         : DEFAULT_SETTINGS.newsServerUrl,
     customSources: Array.isArray(r.customSources)
       ? r.customSources.map(normalizeSource).filter((x): x is Source => x !== null)
-      : DEFAULT_SETTINGS.customSources
+      : DEFAULT_SETTINGS.customSources,
+    dashboard: normalizeDashboard(r.dashboard)
   }
 }

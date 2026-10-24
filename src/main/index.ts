@@ -4,9 +4,12 @@ import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
 import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
+import { normalizeWidget } from '../shared/widgets'
+import { WidgetService } from './widget-service'
 
 let store: SettingsStore
 let news: NewsService
+const widgets = new WidgetService()
 
 function createWindow(): void {
   const win = new BrowserWindow({
@@ -60,6 +63,16 @@ app.whenReady().then(() => {
   ipcMain.handle('app:open-external', (_e, url: unknown) => {
     if (typeof url === 'string' && url.startsWith('https://')) return shell.openExternal(url)
   })
+  // Inputs go through widget validation, so only known currencies and real coordinates reach the services.
+  ipcMain.handle('widgets:rates', (_e, base: unknown, symbols: unknown) => {
+    const w = normalizeWidget({ id: 'x', type: 'currency', base, symbols })
+    return w?.type === 'currency' ? widgets.rates(w.base, w.symbols) : null
+  })
+  ipcMain.handle('widgets:weather', (_e, place: unknown) => {
+    const w = normalizeWidget({ id: 'x', type: 'weather', place })
+    return w?.type === 'weather' ? widgets.weather(w.place) : null
+  })
+  ipcMain.handle('widgets:places', (_e, query: unknown) => (typeof query === 'string' ? widgets.places(query.slice(0, 80)) : []))
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
     platform: process.platform,
