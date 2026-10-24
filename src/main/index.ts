@@ -1,6 +1,8 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
 import { PROVIDERS, type Provider } from '../shared/accounts'
+import { GoogleConnector } from './accounts/google'
+import { googleClient } from './accounts/google-client'
 import { MicrosoftConnector, MsalTokens } from './accounts/microsoft'
 import { AccountService } from './accounts/service'
 import { AccountStore, type Cipher } from './accounts/store'
@@ -62,7 +64,8 @@ app.whenReady().then(() => {
   }
   const accountStore = new AccountStore(app.getPath('userData'), cipher)
   accounts = new AccountService(accountStore, {
-    microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url)))
+    microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url))),
+    google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) })
   })
 
   ipcMain.handle('settings:get', () => store.load())

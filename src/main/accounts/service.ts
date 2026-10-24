@@ -33,16 +33,15 @@ export class AccountService {
   }
 
   async update(id: string, patch: { mail?: boolean; calendar?: boolean }): Promise<Account> {
-    let account = this.store.get(id)
-    if (!account) throw new Error('That account is no longer connected.')
-    const c = this.connector(account.provider)
-    if (patch.calendar && !account.calendar && c.reconsent) account = await c.reconsent(account)
+    const old = this.store.get(id)
+    if (!old) throw new Error('That account is no longer connected.')
+    const c = this.connector(old.provider)
+    let account: Account = { ...old, mail: patch.mail ?? old.mail, calendar: patch.calendar ?? old.calendar }
+    // A switch turned on may need a permission the first sign-in didn't include (or the user unticked).
+    const turnedOn = (account.mail && !old.mail) || (account.calendar && !old.calendar)
+    if (turnedOn && c.reconsent) account = await c.reconsent(account)
     this.cache.clear()
-    return this.store.put({
-      ...account,
-      mail: patch.mail ?? account.mail,
-      calendar: patch.calendar ?? account.calendar
-    })
+    return this.store.put(account)
   }
 
   /** Signs in again after the saved sign-in stopped working. */
