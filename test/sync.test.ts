@@ -81,6 +81,33 @@ describe('two computers sharing a folder', () => {
     b.stop()
   })
 
+  it('keeps an added source through a restart and a sync with another computer', async () => {
+    const shared = tmp()
+    let t = 0
+    const clock = (): string => new Date(Date.UTC(2026, 9, 24, 1, 0, t++)).toISOString()
+    const dir = tmp()
+    const aStore = new SettingsStore(dir)
+    const bStore = new SettingsStore(tmp())
+    const a = new SettingsSync(aStore, tmp(), () => undefined, 'macbook', clock)
+    const b = new SettingsSync(bStore, tmp(), () => undefined, 'mini', clock)
+    await a.use(new FolderRemote(shared, () => undefined), { mode: 'folder', folder: shared })
+    await b.use(new FolderRemote(shared, () => undefined), { mode: 'folder', folder: shared })
+    const hn = { id: 'custom-hn-1', name: 'Hacker News', url: 'https://hnrss.org/frontpage', language: 'en', region: 'Global', lean: 'unrated' }
+
+    a.save({ ...aStore.load(), customSources: [hn] })
+    expect(new SettingsStore(dir).load().customSources).toEqual([hn])
+    await settle(a)
+    // The other computer changes something unrelated; that must not undo the new source.
+    await b.sync()
+    b.save({ ...bStore.load(), theme: 'light' })
+    await settle(b)
+    await a.sync()
+    expect(aStore.load().customSources).toEqual([hn])
+    expect(bStore.load().customSources).toEqual([hn])
+    a.stop()
+    b.stop()
+  })
+
   it('reports a missing folder instead of failing', async () => {
     const store = new SettingsStore(tmp())
     const s = new SettingsSync(store, tmp(), () => undefined, 'x')
