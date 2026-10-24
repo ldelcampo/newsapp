@@ -16,9 +16,9 @@ function Thumb({ src, featured }: { src: string; featured: boolean }): React.JSX
 
 const leanLabel = (v: string): string => LEANS.find((l) => l.value === v)?.label ?? v
 
-export function ArticleList({ articles, ranked = false }: { articles: RankedArticle[]; ranked?: boolean }): React.JSX.Element {
+export function ArticleList({ articles, ranked = false, compact = false }: { articles: RankedArticle[]; ranked?: boolean; compact?: boolean }): React.JSX.Element {
   return (
-    <ol className={ranked ? 'articles ranked' : 'articles'}>
+    <ol className={`articles ${ranked ? 'ranked' : ''} ${compact ? 'compact' : ''}`}>
       {articles.map((a, i) => (
         <li key={a.id} className={ranked && i === 0 ? 'article lead' : 'article'} style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
           {ranked && <span className="rank">{String(i + 1).padStart(2, '0')}</span>}
@@ -26,16 +26,20 @@ export function ArticleList({ articles, ranked = false }: { articles: RankedArti
             <button className="article-link" onClick={() => void window.hub.openExternal(a.url)}>
               {a.title}
             </button>
-            {a.summary && <p className="summary">{a.summary}</p>}
+            {a.summary && !compact && <p className="summary">{a.summary}</p>}
             <div className="meta">
               <span className="source">{a.sourceName}</span>
               <span className={`lean lean-${a.lean}`}>{leanLabel(a.lean)}</span>
               <span>{a.language.toUpperCase()}</span>
               <span>{timeAgo(a.publishedAt)}</span>
-              {a.matched && <span className="match">Matches your topics</span>}
+              {a.matched && (
+                <span className={`match priority-${a.priority}`} title={`${a.priority === 'high' ? 'High' : 'Medium'} priority`}>
+                  {a.topics.join(', ')}
+                </span>
+              )}
             </div>
           </div>
-          {a.imageUrl && <Thumb src={a.imageUrl} featured={ranked && i === 0} />}
+          {a.imageUrl && !compact && <Thumb src={a.imageUrl} featured={ranked && i === 0} />}
         </li>
       ))}
     </ol>

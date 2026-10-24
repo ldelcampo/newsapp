@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
 import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
+import { Icon } from './Icon'
 import type { UpdateState } from '@shared/api'
 
 function describeUpdate(u: UpdateState): string {
   switch (u.status) {
-    case 'checking': return 'Checking…'
+    case 'checking': return 'Checking for updates…'
     case 'current': return 'You have the latest version.'
+    case 'none': return 'No updates have been published yet. You have the newest build.'
+    case 'move': return 'Updates only work when the app is in your Applications folder.'
+    case 'dev': return 'This copy runs from source, so it doesn’t update itself.'
     case 'downloading': return `Downloading update, ${u.percent}%`
     case 'ready': return `Version ${u.version} is ready. Restart to update.`
     case 'error': return `Could not check: ${u.message}`
@@ -28,6 +32,7 @@ export function SettingsView(): React.JSX.Element {
       setTopicsText(s.topics.join(', '))
     })
     void window.hub.appInfo().then(setInfo)
+    return window.hub.onUpdate(setUpdateState)
   }, [])
 
   if (!settings) return <p className="muted">Loading settings…</p>
@@ -88,6 +93,12 @@ export function SettingsView(): React.JSX.Element {
           <small className="muted">Separate topics with commas. Stories that match them come first.</small>
         </label>
 
+        <label className="toggle">
+          <input id="onlyMyTopics" type="checkbox" checked={settings.onlyMyTopics} onChange={(e) => update({ onlyMyTopics: e.target.checked })} />
+          <span className="track" aria-hidden="true" />
+          Show only stories that match my topics, on the dashboard and in News
+        </label>
+
         <fieldset className="field">
           <legend>Languages</legend>
           <div className="chips">
@@ -122,10 +133,36 @@ export function SettingsView(): React.JSX.Element {
           <p className="muted small">
             Version {info.version} · {info.platform} · data in <code>{info.dataDir}</code>
           </p>
-          <button type="button" className="ghost" onClick={() => void window.hub.checkForUpdate().then(setUpdateState)}>
-            Check for updates
+          <button
+            type="button"
+            className="ghost"
+            disabled={updateState?.status === 'checking'}
+            onClick={() => {
+              setUpdateState({ status: 'checking' })
+              window.hub
+                .checkForUpdate()
+                .then(setUpdateState)
+                .catch(() => setUpdateState({ status: 'error', message: 'The check didn’t finish. Try again.' }))
+            }}
+          >
+            <Icon name="refresh" className={updateState?.status === 'checking' ? 'spin' : ''} />
+            {updateState?.status === 'checking' ? 'Checking…' : 'Check for updates'}
           </button>
-          {updateState && <span className="muted small">{describeUpdate(updateState)}</span>}
+          {updateState?.status === 'move' && (
+            <button type="button" className="primary" onClick={() => void window.hub.moveToApplications()}>
+              Move to Applications
+            </button>
+          )}
+          {updateState?.status === 'ready' && (
+            <button type="button" className="primary" onClick={() => void window.hub.installUpdate()}>
+              Restart to update
+            </button>
+          )}
+          {updateState && (
+            <span role="status" className={`update-state ${updateState.status}`}>
+              {describeUpdate(updateState)}
+            </span>
+          )}
         </div>
       )}
     </form>
