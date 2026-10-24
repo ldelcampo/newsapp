@@ -166,7 +166,7 @@ export function SourcesEditor({ sources, onChange }: { sources: Source[]; onChan
         {test &&
           (test.ok ? (
             <p className="ok small">
-              Works: {test.count} articles, for example "{test.sample[0]}". Add it, then Save.
+              Works: {test.count} articles, for example "{test.sample[0]}". Add it to start reading it.
             </p>
           ) : (
             <p className="error small">{test.error}</p>

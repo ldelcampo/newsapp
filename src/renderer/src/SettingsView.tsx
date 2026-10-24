@@ -53,6 +53,13 @@ export function SettingsView(): React.JSX.Element {
     setTopicsText(saved.topics.join(', '))
   }
 
+  /** Added and removed sources are kept right away, so leaving Settings without Save doesn't lose them. */
+  const saveSources = async (customSources: Settings['customSources']): Promise<void> => {
+    update({ customSources })
+    const saved = await window.hub.saveSettings({ ...(await window.hub.getSettings()), customSources })
+    setSettings((s) => (s ? { ...s, customSources: saved.customSources } : s))
+  }
+
   const toggleLanguage = (code: string): void => {
     const has = settings.newsLanguages.includes(code)
     update({ newsLanguages: has ? settings.newsLanguages.filter((c) => c !== code) : [...settings.newsLanguages, code] })
@@ -141,7 +148,7 @@ export function SettingsView(): React.JSX.Element {
 
       <section className="card enter" style={{ '--i': 4 } as React.CSSProperties}>
         <h2>Sources</h2>
-        <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
+        <SourcesEditor sources={settings.customSources} onChange={(customSources) => void saveSources(customSources)} />
       </section>
 
       <section className="card enter" style={{ '--i': 5 } as React.CSSProperties}>
