@@ -440,3 +440,19 @@ button.chip { font: inherit; color: var(--fg); }
 .sync-how { align-self: flex-start; }
 .sync-how button { padding: 6px 14px; font-size: 0.85rem; }
 .sync-form { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---------- Accounts ---------- */
+.accounts { display: flex; flex-direction: column; gap: 12px; }
+.account-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.account { display: flex; align-items: center; gap: 16px; padding: 12px 0; animation: rise 0.5s var(--ease) backwards; }
+.account + .account { border-top: 1px solid var(--line); }
+.account-who { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.account-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.avatar { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.avatar.provider-google { background: linear-gradient(135deg, #4285f4, #34a853); }
+.avatar.provider-microsoft { background: linear-gradient(135deg, #0078d4, #50e6ff); }
+.add-account { flex-wrap: wrap; }
+
+.imap-form { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; animation: rise 0.4s var(--ease) backwards; }
+.imap-form h3 { margin: 0; font-size: 1rem; }
+.imap-form details > summary { cursor: pointer; font-weight: 600; font-size: 0.88rem; margin-bottom: 12px; }
