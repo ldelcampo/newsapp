@@ -74,8 +74,6 @@ jobs:
         shell: bash
         env:
           SIGN_MAC: ${{ steps.cert.outputs.signed }}
-          PUBLISH: ${{ steps.beta.outputs.version != '' }}
-          GH_TOKEN: ${{ steps.beta.outputs.version != '' && github.token || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -89,8 +87,7 @@ jobs:
           set -o pipefail
           if [ "$SIGN_MAC" = "true" ]; then
             echo "Signing with Developer ID and notarizing"
-            script=dist; [ "$PUBLISH" = "true" ] && script=dist:publish
-            cmd="npm run $script -- -c.mac.notarize=true -c.forceCodeSigning=true"
+            cmd="npm run dist -- -c.mac.notarize=true -c.forceCodeSigning=true"
           else
             echo "No signing certificate: unsigned (Windows/Linux) or ad-hoc (macOS)"
             export CSC_IDENTITY_AUTO_DISCOVERY=false
@@ -121,6 +118,19 @@ jobs:
             check xcrun stapler validate "$app"
             echo "::notice::$(codesign -dv "$app" 2>&1 | grep -E '^Authority=Developer ID Application' | head -1)"
           fi
+      - name: Publish the beta
+        # The build already wrote latest-mac.yml, which installed apps read to find this update.
+        if: steps.beta.outputs.version != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.beta.outputs.version }}
+        run: |
+          ls -la dist
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Beta $VERSION" --generate-notes \
+            dist/*.dmg dist/*.zip dist/*.blockmap dist/latest-mac.yml
+          echo "::notice::Published https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.os }}

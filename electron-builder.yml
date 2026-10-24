@@ -14,6 +14,8 @@ mac:
   # Signed with the Developer ID that CI imports into the keychain; otherwise
   # build/after-pack.cjs applies an ad-hoc signature.
   category: public.app-category.productivity
+  # No spaces, so the names GitHub gives uploaded files match latest-mac.yml.
+  artifactName: InformationHub-${version}-${arch}-mac.${ext}
 linux:
   target: AppImage
   category: Office
