@@ -10,7 +10,13 @@ export interface JiraSite {
   email: string
   /** Who the token belongs to, from /myself. */
   name: string
+  /** Where REST calls go when it isn't `url`: scoped Cloud tokens only work through Atlassian's API gateway. */
+  apiUrl?: string
 }
+
+/** The gateway address for a Cloud site, which scoped API tokens require. */
+export const gatewayUrl = (cloudId: string): string => `https://api.atlassian.com/ex/jira/${cloudId}`
+const GATEWAY = /^https:\/\/api\.atlassian\.com\/ex\/jira\/[0-9a-f-]{36}$/
 
 /** How much a project counts when ranking; hidden projects are left out. */
 export type ProjectWeight = 'high' | 'normal' | 'low' | 'hidden'
@@ -82,7 +88,8 @@ export function normalizeSite(raw: unknown): JiraSite | null {
   const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
   const url = cleanSiteUrl(str(r.url))
   if (!str(r.id) || !url) return null
-  return { id: str(r.id), url, kind: siteKind(url), email: str(r.email), name: str(r.name) }
+  const apiUrl = GATEWAY.test(str(r.apiUrl)) ? str(r.apiUrl) : undefined
+  return { id: str(r.id), url, kind: siteKind(url), email: str(r.email), name: str(r.name), ...(apiUrl ? { apiUrl } : {}) }
 }
 
 export const FIELDS = ['summary', 'status', 'priority', 'duedate', 'updated', 'project', 'issuetype', 'issuelinks', 'description']
