@@ -32,9 +32,9 @@ function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean)
 }
 
 /** Widget types that only make sense once on a dashboard. */
-const SINGLE: WidgetType[] = ['top-stories', 'stats', 'meetings', 'mail']
+const SINGLE: WidgetType[] = ['top-stories', 'stats', 'meetings', 'mail', 'tickets']
 
-export function DashboardView({ onOpen }: { onOpen: (view: 'news' | 'settings') => void }): React.JSX.Element {
+export function DashboardView({ onOpen }: { onOpen: (view: 'news' | 'settings' | 'work') => void }): React.JSX.Element {
   const { news, loading, reload } = useNews()
   const [settings, setSettings] = useState<Settings | null>(null)
   const [editing, setEditing] = useState(false)

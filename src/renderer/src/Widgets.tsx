@@ -6,6 +6,7 @@ import { CURRENCIES, type Place, type Rates, type Weather, type Widget, type Wid
 import { ArticleList, ArticleSkeleton } from './ArticleList'
 import { Icon } from './Icon'
 import { NewsStatus } from './NewsStatus'
+import { TicketList, TicketStatus, useTickets } from './Tickets'
 import { WeatherScene } from './WeatherScene'
 
 export interface WidgetContext {
@@ -13,7 +14,7 @@ export interface WidgetContext {
   news: NewsResult | null
   loading: boolean
   reload: () => void
-  onOpen: (view: 'news' | 'settings') => void
+  onOpen: (view: 'news' | 'settings' | 'work') => void
 }
 
 /** Runs an async load whenever `key` changes; keeps the last result while reloading. */
@@ -66,6 +67,44 @@ function TopStories({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): Re
         <p className="muted">{settings.onlyMyTopics ? 'No stories match your topics right now.' : 'No stories yet.'}</p>
       )}
       {size !== 'small' && <NewsStatus news={news} loading={loading} reload={reload} />}
+    </>
+  )
+}
+
+function NeedsYou({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JSX.Element {
+  const connected = ctx.settings.jiraSites.length > 0
+  const t = useTickets(connected)
+  const tickets = t.result?.tickets ?? []
+  const now = tickets.filter((x) => x.urgency === 'now').length
+  return (
+    <>
+      <header className="card-head">
+        <h2>
+          <Icon name="work" /> Needs you today
+          {now > 0 && <span className="pill urgent">{now}</span>}
+        </h2>
+        {connected && (
+          <button className="link" onClick={() => ctx.onOpen('work')}>
+            All tickets <Icon name="arrow" />
+          </button>
+        )}
+      </header>
+      {!connected ? (
+        <p className="hint">
+          See your Jira tickets here, most urgent first.{' '}
+          <button className="link" onClick={() => ctx.onOpen('settings')}>
+            Connect Jira
+          </button>
+        </p>
+      ) : t.loading && !t.result ? (
+        <ArticleSkeleton rows={STORY_COUNT[size]} />
+      ) : tickets.length ? (
+        <TicketList tickets={tickets.slice(0, STORY_COUNT[size])} compact={size === 'small'} />
+      ) : (
+        <p className="muted">{t.result ? 'Nothing open is assigned to you. Nice.' : ''}</p>
+      )}
+      {connected && size !== 'small' && <TicketStatus {...t} />}
+      {connected && size === 'small' && (t.error || t.result?.problems.length) ? <p className="problems small">{t.error || t.result?.problems[0]}</p> : null}
     </>
   )
 }
@@ -237,6 +276,8 @@ export function WidgetBody({ widget, ctx }: { widget: Widget; ctx: WidgetContext
       return <TopStories ctx={ctx} size={widget.size} />
     case 'stats':
       return <Stats ctx={ctx} />
+    case 'tickets':
+      return <NeedsYou ctx={ctx} size={widget.size} />
     case 'currency':
       return <Currency widget={widget} />
     case 'weather':

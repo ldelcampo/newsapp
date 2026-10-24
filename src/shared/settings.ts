@@ -1,3 +1,4 @@
+import { normalizeSite, PROJECT_WEIGHTS, type JiraSite, type ProjectWeight, type TicketRanking } from './jira'
 import { DEFAULT_FACT_CHECK, normalizeFactCheck, type FactCheckSettings } from './factcheck'
 import { LEANS, type Source } from './news'
 import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
@@ -19,6 +20,12 @@ export interface Settings {
   customSources: Source[]
   /** Dashboard widgets in display order. */
   dashboard: Widget[]
+  /** Connected Jira sites. Their tokens live in the OS keychain, not here. */
+  jiraSites: JiraSite[]
+  /** How much each Jira project counts, by project key. Missing means normal. */
+  projectWeights: Record<string, ProjectWeight>
+  /** 'jev' sends ticket text to TypeSafe AI for scoring; 'local' never sends anything. */
+  ticketRanking: TicketRanking
   /** Which AI checks facts. Its keys live in the OS keychain, not here. */
   factCheck: FactCheckSettings,
   /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
@@ -34,6 +41,9 @@ export const DEFAULT_SETTINGS: Settings = {
   newsServerUrl: '',
   customSources: [],
   dashboard: DEFAULT_DASHBOARD,
+  jiraSites: [],
+  projectWeights: {},
+  ticketRanking: 'local',
   factCheck: DEFAULT_FACT_CHECK,
   syncFolder: ''
 }
@@ -86,6 +96,13 @@ export function normalizeSettings(raw: unknown): Settings {
       ? r.customSources.map(normalizeSource).filter((x): x is Source => x !== null)
       : DEFAULT_SETTINGS.customSources,
     dashboard: normalizeDashboard(r.dashboard),
+    jiraSites: Array.isArray(r.jiraSites) ? r.jiraSites.map(normalizeSite).filter((x): x is JiraSite => x !== null) : [],
+    projectWeights: Object.fromEntries(
+      Object.entries(r.projectWeights && typeof r.projectWeights === 'object' ? r.projectWeights : {}).filter(
+        ([k, v]) => /^[A-Z][A-Z0-9_]{0,30}$/.test(k) && PROJECT_WEIGHTS.some((w) => w.value === v && v !== 'normal')
+      )
+    ) as Record<string, ProjectWeight>,
+    ticketRanking: r.ticketRanking === 'jev' ? 'jev' : 'local',
     factCheck: normalizeFactCheck(r.factCheck),
     // Only absolute paths (macOS/Linux or a Windows drive).
     syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''

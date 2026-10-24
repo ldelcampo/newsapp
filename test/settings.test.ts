@@ -38,6 +38,9 @@ describe('SettingsStore', () => {
       newsServerUrl: '',
       customSources: [],
       dashboard: DEFAULT_SETTINGS.dashboard,
+      jiraSites: [],
+      projectWeights: {},
+      ticketRanking: 'local',
       factCheck: DEFAULT_SETTINGS.factCheck,
       syncFolder: ''
     })

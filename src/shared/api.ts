@@ -1,3 +1,4 @@
+import type { TicketResult } from './jira'
 import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
 import type { Account, CalendarEvent, ConnectionTest, MailMessage, Provider } from './accounts'
 import type { Source, SourceStatus } from './news'
@@ -82,6 +83,14 @@ export interface HubApi {
   weather(place: Place): Promise<Weather>
   /** Places matching a name, for choosing the weather location. */
   findPlaces(query: string): Promise<Place[]>
+  /** Checks the token with Jira, keeps it in the keychain and adds the site to Settings. */
+  jiraConnect(input: { url: string; email: string; token: string }): Promise<{ ok: true; settings: Settings } | { ok: false; error: string }>
+  jiraDisconnect(siteId: string): Promise<Settings>
+  /** Open tickets from every connected site, ranked (cached for 5 minutes unless forced). */
+  tickets(force?: boolean): Promise<TicketResult>
+  hasJevKey(): Promise<boolean>
+  /** An empty key removes it. Returns whether a key is stored. */
+  setJevKey(key: string): Promise<boolean>
   /** Connected mail and calendar accounts. */
   accounts(): Promise<Account[]>
   /** Signs in (Microsoft, Google) or checks the typed details (IMAP), then saves the account. */

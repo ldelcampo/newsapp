@@ -1,7 +1,7 @@
 import { normalizeSettings, type Settings } from './settings'
 
 /** Settings that follow the user between devices. Everything else stays on each device. */
-export const SYNCED_KEYS = ['displayName', 'theme', 'topics', 'onlyMyTopics', 'newsLanguages', 'newsServerUrl', 'customSources', 'dashboard'] as const
+export const SYNCED_KEYS = ['displayName', 'theme', 'topics', 'onlyMyTopics', 'newsLanguages', 'newsServerUrl', 'customSources', 'dashboard', 'projectWeights', 'ticketRanking'] as const
 export type SyncedKey = (typeof SYNCED_KEYS)[number]
 
 /** When each setting last changed (ISO time). A missing stamp is older than any other. */

@@ -1,6 +1,6 @@
 /** Dashboard widgets: what each one is, its size, and its options. Saved in Settings. */
 
-export type WidgetType = 'top-stories' | 'stats' | 'currency' | 'weather' | 'clocks' | 'meetings' | 'mail'
+export type WidgetType = 'top-stories' | 'stats' | 'currency' | 'weather' | 'clocks' | 'meetings' | 'mail' | 'tickets'
 export type WidgetSize = 'small' | 'medium' | 'wide'
 
 export interface Place {
@@ -10,12 +10,13 @@ export interface Place {
 }
 
 export type Widget =
-  | { id: string; type: 'top-stories' | 'stats' | 'meetings' | 'mail'; size: WidgetSize }
+  | { id: string; type: 'top-stories' | 'stats' | 'meetings' | 'mail' | 'tickets'; size: WidgetSize }
   | { id: string; type: 'currency'; size: WidgetSize; base: string; symbols: string[] }
   | { id: string; type: 'weather'; size: WidgetSize; place: Place }
   | { id: string; type: 'clocks'; size: WidgetSize; zones: string[] }
 
 export const WIDGET_TYPES: { type: WidgetType; label: string; description: string; size: WidgetSize }[] = [
+  { type: 'tickets', label: 'Needs you today', description: 'Your Jira tickets, most urgent first', size: 'medium' },
   { type: 'top-stories', label: 'Top stories', description: 'The most relevant news for your topics', size: 'wide' },
   { type: 'stats', label: 'News at a glance', description: 'Stories today, topic matches and outlets', size: 'wide' },
   { type: 'currency', label: 'Exchange rates', description: 'Daily reference rates from the European Central Bank', size: 'medium' },
@@ -54,6 +55,7 @@ export function newWidget(type: WidgetType, id = `${type}-${Date.now().toString(
 }
 
 export const DEFAULT_DASHBOARD: Widget[] = [
+  newWidget('tickets', 'tickets'),
   newWidget('stats', 'stats'),
   newWidget('top-stories', 'top-stories'),
   newWidget('currency', 'currency'),
