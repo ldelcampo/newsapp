@@ -16,6 +16,8 @@ export class NewsService {
   private readonly cacheFile: string
   /** Statuses from the latest load, for the Settings screen. */
   lastSources: SourceStatus[] = []
+  /** Articles from the latest load, so a story can be verified by id. */
+  lastArticles: Article[] = []
 
   private readonly stateFile: string
   private readonly fetcher: PoliteFetcher
@@ -129,6 +131,7 @@ export class NewsService {
     }
 
     this.lastSources = sources
+    this.lastArticles = articles
     return { fetchedAt, offline, via, problems, sources, articles: rankArticles(articles, settings.topics, settings.newsLanguages) }
   }
 }

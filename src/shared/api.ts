@@ -1,3 +1,4 @@
+import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
 import type { Account, CalendarEvent, ConnectionTest, MailMessage, Provider } from './accounts'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
@@ -100,4 +101,16 @@ export interface HubApi {
   installUpdate(): Promise<void>
   /** Calls back on every update state change; returns an unsubscribe function. */
   onUpdate(cb: (state: UpdateState) => void): () => void
+  /** Checks a story from the latest news load: coverage always, claims when an AI key is set. */
+  verifyArticle(articleId: string): Promise<FactReport>
+  /** The saved report for a story, if it was checked before. */
+  savedReport(articleId: string): Promise<FactReport | null>
+  /** Calls back as a check moves through its steps; returns an unsubscribe function. */
+  onVerifyStep(cb: (articleId: string, step: FactCheckStep) => void): () => void
+  /** Which keys are saved. The keys themselves never reach this window. */
+  secrets(): Promise<Record<SecretName, boolean>>
+  /** Saves a key in the OS keychain, or removes it when `value` is empty. */
+  setSecret(name: SecretName, value: string): Promise<Record<SecretName, boolean>>
+  /** Sends a tiny request to see that a provider, key and model work. */
+  testProvider(provider: ProviderId): Promise<{ ok: true } | { ok: false; error: string }>
 }
