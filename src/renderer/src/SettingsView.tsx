@@ -10,6 +10,7 @@ function describeUpdate(u: UpdateState): string {
     case 'checking': return 'Checking for updates…'
     case 'current': return 'You have the latest version.'
     case 'none': return 'No updates have been published yet. You have the newest build.'
+    case 'move': return 'Updates only work when the app is in your Applications folder.'
     case 'dev': return 'This copy runs from source, so it doesn’t update itself.'
     case 'downloading': return `Downloading update, ${u.percent}%`
     case 'ready': return `Version ${u.version} is ready. Restart to update.`
@@ -147,6 +148,11 @@ export function SettingsView(): React.JSX.Element {
             <Icon name="refresh" className={updateState?.status === 'checking' ? 'spin' : ''} />
             {updateState?.status === 'checking' ? 'Checking…' : 'Check for updates'}
           </button>
+          {updateState?.status === 'move' && (
+            <button type="button" className="primary" onClick={() => void window.hub.moveToApplications()}>
+              Move to Applications
+            </button>
+          )}
           {updateState?.status === 'ready' && (
             <button type="button" className="primary" onClick={() => void window.hub.installUpdate()}>
               Restart to update

@@ -430,3 +430,4 @@ button.chip { font: inherit; color: var(--fg); }
 .update-state { font-size: 0.85rem; color: var(--muted); animation: rise 0.35s var(--ease); }
 .update-state.current, .update-state.none, .update-state.ready { color: var(--ok); }
 .update-state.error { color: var(--bad); }
+.update-state.move { color: var(--warn); }

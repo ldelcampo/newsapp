@@ -25,6 +25,8 @@ export type UpdateState =
   | { status: 'none' }
   /** Running from source, which never updates itself. */
   | { status: 'dev' }
+  /** macOS only updates apps that live in the Applications folder. */
+  | { status: 'move' }
   | { status: 'downloading'; percent: number }
   | { status: 'ready'; version: string }
   | { status: 'error'; message: string }
@@ -39,6 +41,8 @@ export interface HubApi {
   sourceStatuses(): Promise<SourceStatus[]>
   testSource(source: Source): Promise<SourceTest>
   openExternal(url: string): Promise<void>
+  /** macOS: moves the app into Applications and relaunches it from there. */
+  moveToApplications(): Promise<boolean>
   /** Exchange rates for the currency widget (cached for an hour). */
   rates(base: string, symbols: string[]): Promise<Rates>
   /** Weather for the weather widget (cached for 30 minutes). */

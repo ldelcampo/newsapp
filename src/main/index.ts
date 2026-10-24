@@ -60,6 +60,7 @@ app.whenReady().then(() => {
     const [clean] = normalizeSettings({ customSources: [source] }).customSources
     return clean ? testSource(clean) : { ok: false, error: 'Enter a name and an address starting with https://.' }
   })
+  ipcMain.handle('app:move-to-applications', () => process.platform === 'darwin' && app.isPackaged && app.moveToApplicationsFolder())
   ipcMain.handle('app:open-external', (_e, url: unknown) => {
     if (typeof url === 'string' && url.startsWith('https://')) return shell.openExternal(url)
   })

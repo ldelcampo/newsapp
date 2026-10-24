@@ -9,6 +9,7 @@ const api: HubApi = {
   sourceStatuses: () => ipcRenderer.invoke('news:source-statuses'),
   testSource: (source) => ipcRenderer.invoke('news:test-source', source),
   openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
+  moveToApplications: () => ipcRenderer.invoke('app:move-to-applications'),
   rates: (base, symbols) => ipcRenderer.invoke('widgets:rates', base, symbols),
   weather: (place) => ipcRenderer.invoke('widgets:weather', place),
   findPlaces: (query) => ipcRenderer.invoke('widgets:places', query),

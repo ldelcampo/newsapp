@@ -27,6 +27,8 @@ export function startUpdater(): void {
   ipcMain.handle('update:install', () => autoUpdater.quitAndInstall())
   ipcMain.handle('update:check', async (): Promise<UpdateState> => {
     if (!app.isPackaged) return { status: 'dev' }
+    // Opened straight from Downloads or the disk image, macOS runs a read-only copy that can't be replaced.
+    if (process.platform === 'darwin' && !app.isInApplicationsFolder()) return { status: 'move' }
     // A check while downloading or ready would only interrupt; report where it stands.
     if (state.status === 'downloading' || state.status === 'ready') return state
     publish({ status: 'checking' })
