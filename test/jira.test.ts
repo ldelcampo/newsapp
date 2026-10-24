@@ -198,4 +198,41 @@ describe('jira service', () => {
     expect(down.problems[0]).toMatch(/Jev ranking: TypeSafe AI answered 503/)
     expect(down.tickets).toHaveLength(1)
   })
+
+  describe('scoped Cloud tokens', () => {
+    const cloudId = '0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0'
+    const gateway = `https://api.atlassian.com/ex/jira/${cloudId}`
+    const answers = (gatewayStatus: number) => (url: string) => {
+      if (url === 'https://acme.atlassian.net/_edge/tenant_info') return { cloudId }
+      if (url.startsWith('https://acme.atlassian.net/')) return new Response('{}', { status: 401 })
+      if (url === `${gateway}/rest/api/3/myself`) return gatewayStatus === 200 ? { displayName: 'Luis' } : new Response('{}', { status: gatewayStatus })
+      if (url === `${gateway}/rest/api/3/search/jql`) return { issues: [issue('A-1')], isLast: true }
+      return new Response('{}', { status: 404 })
+    }
+
+    it('falls back to the Atlassian gateway, and reads tickets through it', async () => {
+      const { svc } = setup(answers(200))
+      const me = await svc.whoAmI(site, 'tok-123456789')
+      expect(me).toEqual({ name: 'Luis', apiUrl: gateway })
+      const s = normalizeSettings({ jiraSites: [{ ...site, apiUrl: gateway }] })
+      expect(s.jiraSites[0].apiUrl).toBe(gateway)
+      const r = await svc.load(s)
+      expect(r.problems).toEqual([])
+      expect(r.tickets[0].url).toBe('https://acme.atlassian.net/browse/A-1')
+    })
+
+    it('explains missing scopes, and keeps the sign-in error for a wrong token', async () => {
+      await expect(setup(answers(403)).svc.whoAmI(site, 'tok-123456789')).rejects.toThrow(/read:jira-work/)
+      await expect(setup(answers(401)).svc.whoAmI(site, 'tok-123456789')).rejects.toMatchObject({ status: 401 })
+    })
+
+    it('asks for the browser when Jira wants a CAPTCHA', async () => {
+      const { svc } = setup(() => new Response('{}', { status: 401, headers: { 'x-seraph-loginreason': 'AUTHENTICATION_DENIED,CAPTCHA_CHALLENGE' } }))
+      await expect(svc.whoAmI(site, 'tok-123456789')).rejects.toThrow(/CAPTCHA/)
+    })
+
+    it('only keeps real gateway addresses from settings', () => {
+      expect(normalizeSettings({ jiraSites: [{ ...site, apiUrl: 'https://evil.example.com' }] }).jiraSites[0].apiUrl).toBeUndefined()
+    })
+  })
 })
