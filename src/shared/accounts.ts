@@ -23,6 +23,8 @@ export interface Account {
   addedAt: string
   /** 'reauth' when the provider rejected the saved sign-in and the user must reconnect. */
   status?: 'ok' | 'reauth'
+  /** Servers for an IMAP account; its password is a secret in the store. */
+  imap?: ImapSettings
 }
 
 export interface MailMessage {
@@ -66,8 +68,15 @@ export function normalizeAccount(raw: unknown): Account | null {
     mail: r.mail !== false,
     calendar: r.calendar !== false,
     addedAt: str(r.addedAt) || new Date(0).toISOString(),
-    ...(r.status === 'reauth' ? { status: 'reauth' as const } : {})
+    ...(r.status === 'reauth' ? { status: 'reauth' as const } : {}),
+    ...imapField(provider, r.imap)
   }
+}
+
+function imapField(provider: Provider, raw: unknown): { imap?: ImapSettings } {
+  if (provider !== 'imap') return {}
+  const imap = normalizeImapSettings(raw)
+  return typeof imap === 'string' ? {} : { imap }
 }
 
 /** Newest first; unread mail is not reordered, so the list reads like an inbox. */
@@ -85,4 +94,135 @@ export function mergeEvents(lists: CalendarEvent[][], now: Date): CalendarEvent[
     .flat()
     .filter((e) => e.end > t)
     .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+}
+
+// IMAP accounts (IONOS and any other provider with IMAP/SMTP, plus CalDAV when offered).
+
+/** Servers for an IMAP account. Not secret, so kept with the account. */
+export interface ImapSettings {
+  /** Login name; usually the email address. */
+  user: string
+  imapHost: string
+  imapPort: number
+  smtpHost: string
+  smtpPort: number
+  /** CalDAV address for the calendar; empty when the provider has none. */
+  caldavUrl: string
+}
+
+/** What the Add account form sends for an IMAP account. */
+export interface ImapAccountInput {
+  email: string
+  name: string
+  password: string
+  calendar: boolean
+  imap: ImapSettings
+  /** Set when entering a new password for an account that already exists. */
+  accountId?: string
+}
+
+export type ConnectionTest =
+  | { ok: true; calendar: 'found' | 'none' | 'off'; note?: string }
+  | { ok: false; error: string }
+
+export interface ImapPreset {
+  id: string
+  label: string
+  /** Mail domains that use this provider, for picking the preset from an address. */
+  domains: string[]
+  settings: Omit<ImapSettings, 'user'>
+}
+
+export const IMAP_PRESETS: ImapPreset[] = [
+  {
+    id: 'ionos-mx',
+    label: 'IONOS (Mexico)',
+    domains: [],
+    settings: { imapHost: 'imap.ionos.mx', imapPort: 993, smtpHost: 'smtp.ionos.mx', smtpPort: 465, caldavUrl: '' }
+  },
+  {
+    id: 'ionos-com',
+    label: 'IONOS (US)',
+    domains: [],
+    settings: { imapHost: 'imap.ionos.com', imapPort: 993, smtpHost: 'smtp.ionos.com', smtpPort: 465, caldavUrl: '' }
+  },
+  {
+    id: 'ionos-de',
+    label: 'IONOS (Europe)',
+    domains: [],
+    settings: { imapHost: 'imap.ionos.de', imapPort: 993, smtpHost: 'smtp.ionos.de', smtpPort: 465, caldavUrl: '' }
+  },
+  {
+    id: 'icloud',
+    label: 'iCloud',
+    domains: ['icloud.com', 'me.com', 'mac.com'],
+    settings: { imapHost: 'imap.mail.me.com', imapPort: 993, smtpHost: 'smtp.mail.me.com', smtpPort: 587, caldavUrl: 'https://caldav.icloud.com' }
+  },
+  {
+    id: 'fastmail',
+    label: 'Fastmail',
+    domains: ['fastmail.com', 'fastmail.fm'],
+    settings: { imapHost: 'imap.fastmail.com', imapPort: 993, smtpHost: 'smtp.fastmail.com', smtpPort: 465, caldavUrl: 'https://caldav.fastmail.com' }
+  },
+  {
+    id: 'yahoo',
+    label: 'Yahoo',
+    domains: ['yahoo.com', 'yahoo.com.mx', 'ymail.com'],
+    settings: { imapHost: 'imap.mail.yahoo.com', imapPort: 993, smtpHost: 'smtp.mail.yahoo.com', smtpPort: 465, caldavUrl: 'https://caldav.calendar.yahoo.com' }
+  },
+  {
+    id: 'other',
+    label: 'Other (enter servers)',
+    domains: [],
+    settings: { imapHost: '', imapPort: 993, smtpHost: '', smtpPort: 465, caldavUrl: '' }
+  }
+]
+
+/** Best guess of servers for an address: a known provider, else the usual mail.domain names. */
+export function guessImapSettings(email: string): ImapSettings {
+  const domain = email.split('@')[1]?.trim().toLowerCase() ?? ''
+  const preset = IMAP_PRESETS.find((p) => p.domains.includes(domain))
+  if (preset) return { user: email.trim(), ...preset.settings }
+  return { user: email.trim(), imapHost: domain ? `imap.${domain}` : '', imapPort: 993, smtpHost: domain ? `smtp.${domain}` : '', smtpPort: 465, caldavUrl: '' }
+}
+
+const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function port(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : fallback
+}
+
+const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+
+/** Validates server settings; returns a message for the first problem, or the clean settings. */
+export function normalizeImapSettings(raw: unknown): ImapSettings | string {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const imapHost = str(r.imapHost).toLowerCase()
+  const smtpHost = str(r.smtpHost).toLowerCase()
+  const caldavUrl = str(r.caldavUrl)
+  if (!str(r.user)) return 'Enter the login name, usually your email address.'
+  if (!HOST.test(imapHost)) return 'Enter the incoming (IMAP) server, such as imap.ionos.mx.'
+  if (!HOST.test(smtpHost)) return 'Enter the outgoing (SMTP) server, such as smtp.ionos.mx.'
+  if (caldavUrl && !/^https:\/\/[^\s]+$/.test(caldavUrl)) return 'The calendar address must start with https://.'
+  return {
+    user: str(r.user),
+    imapHost,
+    imapPort: port(r.imapPort, 993),
+    smtpHost,
+    smtpPort: port(r.smtpPort, 465),
+    caldavUrl
+  }
+}
+
+export function normalizeImapInput(raw: unknown): ImapAccountInput | string {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const email = str(r.email)
+  if (!EMAIL.test(email)) return 'Enter a valid email address.'
+  if (typeof r.password !== 'string' || r.password === '') return 'Enter the password for this mailbox.'
+  const imap = normalizeImapSettings(r.imap)
+  if (typeof imap === 'string') return imap
+  const accountId = str(r.accountId)
+  return { email, name: str(r.name) || email, password: r.password, calendar: r.calendar !== false, imap, ...(accountId ? { accountId } : {}) }
 }

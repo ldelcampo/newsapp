@@ -3,6 +3,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from 'el
 import { PROVIDERS, type Provider } from '../shared/accounts'
 import { GoogleConnector } from './accounts/google'
 import { googleClient } from './accounts/google-client'
+import { ImapConnector, testImap } from './accounts/imap'
 import { MicrosoftConnector, MsalTokens } from './accounts/microsoft'
 import { AccountService } from './accounts/service'
 import { AccountStore, type Cipher } from './accounts/store'
@@ -65,7 +66,8 @@ app.whenReady().then(() => {
   const accountStore = new AccountStore(app.getPath('userData'), cipher)
   accounts = new AccountService(accountStore, {
     microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url))),
-    google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) })
+    google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) }),
+    imap: new ImapConnector(accountStore)
   })
 
   ipcMain.handle('settings:get', () => store.load())
@@ -115,6 +117,10 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('accounts:reconnect', (_e, a: unknown) => accounts.reconnect(id(a)))
   ipcMain.handle('accounts:remove', (_e, a: unknown) => accounts.remove(id(a)))
+  ipcMain.handle('accounts:test-imap', async (_e, input: unknown) => {
+    const { caldavUrl: _found, ...result } = await testImap(input)
+    return result
+  })
   ipcMain.handle('accounts:mail', () => accounts.recentMail())
   ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
   ipcMain.handle('app:info', () => ({

@@ -1,4 +1,4 @@
-import type { Account, CalendarEvent, MailMessage, Provider } from './accounts'
+import type { Account, CalendarEvent, ConnectionTest, MailMessage, Provider } from './accounts'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -64,6 +64,8 @@ export interface HubApi {
   /** Signs in again after the provider rejected the saved sign-in. */
   reconnectAccount(id: string): Promise<Account>
   removeAccount(id: string): Promise<void>
+  /** Checks IMAP and SMTP logins and looks for a calendar, without saving anything. */
+  testImap(input: unknown): Promise<ConnectionTest>
   /** Newest inbox mail across accounts with mail switched on (cached for 2 minutes). */
   recentMail(): Promise<AccountFeed<MailMessage>>
   /** Events from today through the next 7 days, across accounts with calendar switched on (cached for 5 minutes). */

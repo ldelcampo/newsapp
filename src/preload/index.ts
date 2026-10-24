@@ -18,6 +18,7 @@ const api: HubApi = {
   updateAccount: (id, patch) => ipcRenderer.invoke('accounts:update', id, patch),
   reconnectAccount: (id) => ipcRenderer.invoke('accounts:reconnect', id),
   removeAccount: (id) => ipcRenderer.invoke('accounts:remove', id),
+  testImap: (input) => ipcRenderer.invoke('accounts:test-imap', input),
   recentMail: () => ipcRenderer.invoke('accounts:mail'),
   upcomingEvents: () => ipcRenderer.invoke('accounts:events'),
   getUpdate: () => ipcRenderer.invoke('update:get'),
