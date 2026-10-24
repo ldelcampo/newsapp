@@ -40,7 +40,8 @@ describe('SettingsStore', () => {
       dashboard: DEFAULT_SETTINGS.dashboard,
       jiraSites: [],
       projectWeights: {},
-      ticketRanking: 'local'
+      ticketRanking: 'local',
+      syncFolder: ''
     })
   })
 

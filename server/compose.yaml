@@ -8,3 +8,10 @@ services:
       - "127.0.0.1:8787:8787"
     environment:
       REFRESH_MINUTES: "15"
+      DATA_DIR: /data
+    volumes:
+      # Accounts and encrypted settings; back this up.
+      - news-data:/data
+
+volumes:
+  news-data:

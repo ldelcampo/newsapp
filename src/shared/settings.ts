@@ -25,6 +25,8 @@ export interface Settings {
   projectWeights: Record<string, ProjectWeight>
   /** 'jev' sends ticket text to TypeSafe AI for scoring; 'local' never sends anything. */
   ticketRanking: TicketRanking
+  /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
+  syncFolder: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -38,7 +40,8 @@ export const DEFAULT_SETTINGS: Settings = {
   dashboard: DEFAULT_DASHBOARD,
   jiraSites: [],
   projectWeights: {},
-  ticketRanking: 'local'
+  ticketRanking: 'local',
+  syncFolder: ''
 }
 
 export const NEWS_LANGUAGES: { code: string; label: string }[] = [
@@ -95,6 +98,8 @@ export function normalizeSettings(raw: unknown): Settings {
         ([k, v]) => /^[A-Z][A-Z0-9_]{0,30}$/.test(k) && PROJECT_WEIGHTS.some((w) => w.value === v && v !== 'normal')
       )
     ) as Record<string, ProjectWeight>,
-    ticketRanking: r.ticketRanking === 'jev' ? 'jev' : 'local'
+    ticketRanking: r.ticketRanking === 'jev' ? 'jev' : 'local',
+    // Only absolute paths (macOS/Linux or a Windows drive).
+    syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''
   }
 }
