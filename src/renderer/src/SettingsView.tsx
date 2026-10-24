@@ -19,7 +19,7 @@ export function SettingsView(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [topicsText, setTopicsText] = useState('')
   const [status, setStatus] = useState('')
-  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const [info, setInfo] = useState<{ version: string; platform: string; dataDir: string } | null>(null)
 
   useEffect(() => {
@@ -122,10 +122,10 @@ export function SettingsView(): React.JSX.Element {
           <p className="muted small">
             Version {info.version} · {info.platform} · data in <code>{info.dataDir}</code>
           </p>
-          <button type="button" className="ghost" onClick={() => void window.hub.checkForUpdate().then(setUpdate)}>
+          <button type="button" className="ghost" onClick={() => void window.hub.checkForUpdate().then(setUpdateState)}>
             Check for updates
           </button>
-          {update && <span className="muted small">{describeUpdate(update)}</span>}
+          {updateState && <span className="muted small">{describeUpdate(updateState)}</span>}
         </div>
       )}
     </form>
