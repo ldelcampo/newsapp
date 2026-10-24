@@ -1,16 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { filterArticles, PRIORITIES, type Priority } from '@shared/ranking'
+import type { Settings } from '@shared/settings'
 import { ArticleList, ArticleSkeleton } from './ArticleList'
 import { NewsStatus } from './NewsStatus'
 import { useNews } from './useNews'
 
 export function NewsView(): React.JSX.Element {
   const { news, loading, reload } = useNews()
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [onlyMatches, setOnlyMatches] = useState(false)
+  const [topic, setTopic] = useState('')
+  const [minPriority, setMinPriority] = useState<Priority>('low')
   const [query, setQuery] = useState('')
-  const q = query.trim().toLowerCase()
-  const list = (news?.articles ?? []).filter(
-    (a) => (!onlyMatches || a.matched) && (!q || a.title.toLowerCase().includes(q) || a.sourceName.toLowerCase().includes(q))
-  )
+
+  useEffect(() => {
+    void window.hub.getSettings().then((s) => {
+      setSettings(s)
+      setOnlyMatches(s.onlyMyTopics)
+    })
+  }, [])
+
+  const all = news?.articles ?? []
+  const list = filterArticles(all, { onlyMatches, topic, minPriority, query })
+  const topics = settings?.topics ?? []
+  const countFor = (t: string): number => all.filter((a) => a.topics.includes(t)).length
 
   return (
     <div className="news">
@@ -21,10 +34,36 @@ export function NewsView(): React.JSX.Element {
           <span className="track" aria-hidden="true" />
           Only my topics
         </label>
+        <label className="field-inline">
+          <span className="muted small">Priority</span>
+          <select id="priority" value={minPriority} onChange={(e) => setMinPriority(e.target.value as Priority)}>
+            <option value="low">Any</option>
+            <option value="medium">Medium and high</option>
+            <option value="high">High only</option>
+          </select>
+        </label>
         <NewsStatus news={news} loading={loading} reload={reload} />
       </div>
-      <section className="card enter" style={{ '--i': 1 } as React.CSSProperties}>
-        {loading && !news ? <ArticleSkeleton rows={8} /> : list.length > 0 ? <ArticleList articles={list} /> : <p className="muted">No stories match.</p>}
+
+      {topics.length > 0 && (
+        <div className="chips topic-filter enter" role="group" aria-label="Filter by topic" style={{ '--i': 1 } as React.CSSProperties}>
+          <button type="button" className={topic === '' ? 'chip on' : 'chip'} aria-pressed={topic === ''} onClick={() => setTopic('')}>
+            All topics
+          </button>
+          {topics.map((t) => (
+            <button type="button" key={t} className={topic === t ? 'chip on' : 'chip'} aria-pressed={topic === t} onClick={() => setTopic(topic === t ? '' : t)}>
+              {t} <span className="count">{countFor(t)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <section className="card enter" style={{ '--i': 2 } as React.CSSProperties}>
+        <p className="muted small" aria-live="polite">
+          {loading && !news ? 'Loading stories…' : `${list.length} of ${all.length} stories`}
+          {minPriority !== 'low' && ` · ${PRIORITIES.find((p) => p.value === minPriority)?.label}${minPriority === 'medium' ? ' and high' : ''} priority`}
+        </p>
+        {loading && !news ? <ArticleSkeleton rows={8} /> : list.length > 0 ? <ArticleList articles={list} /> : <p className="muted">No stories match these filters.</p>}
       </section>
     </div>
   )

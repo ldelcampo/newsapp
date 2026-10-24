@@ -1,81 +1,162 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Settings } from '@shared/settings'
-import { ArticleList, ArticleSkeleton } from './ArticleList'
+import { newWidget, SIZES, WIDGET_TYPES, type Widget, type WidgetSize, type WidgetType } from '@shared/widgets'
 import { Icon } from './Icon'
-import { NewsStatus } from './NewsStatus'
 import { useNews } from './useNews'
+import { WidgetBody, WidgetOptions, type WidgetContext } from './Widgets'
+
+const ROW = 2 // px; must match grid-auto-rows in styles.css
+const GAP = 18
+
+/**
+ * Masonry packing: each card spans as many tiny grid rows as its height needs, so shorter
+ * widgets slide up into the space beside taller ones instead of leaving gaps.
+ */
+function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean): void {
+  useEffect(() => {
+    const grid = ref.current
+    if (!grid) return
+    const fit = (el: HTMLElement): void => {
+      el.style.gridRowEnd = `span ${Math.ceil((el.offsetHeight + GAP) / ROW)}`
+    }
+    const sizes = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target as HTMLElement)))
+    const watch = (): void => Array.from(grid.children).forEach((c) => sizes.observe(c))
+    const added = new MutationObserver(watch)
+    watch()
+    added.observe(grid, { childList: true })
+    return () => {
+      sizes.disconnect()
+      added.disconnect()
+    }
+  }, [ref, ready])
+}
+
+/** Widget types that only make sense once on a dashboard. */
+const SINGLE: WidgetType[] = ['top-stories', 'stats', 'meetings', 'mail']
 
 export function DashboardView({ onOpen }: { onOpen: (view: 'news' | 'settings') => void }): React.JSX.Element {
   const { news, loading, reload } = useNews()
   const [settings, setSettings] = useState<Settings | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [dragging, setDragging] = useState<string | null>(null)
+  const saving = useRef<Promise<unknown>>(Promise.resolve())
+  const grid = useRef<HTMLDivElement>(null)
+  useMasonry(grid, settings !== null)
   useEffect(() => void window.hub.getSettings().then(setSettings), [])
 
-  const articles = news?.articles ?? []
-  const top = articles.slice(0, 5)
-  const matches = articles.filter((a) => a.matched).length
-  const outlets = new Set(articles.map((a) => a.sourceId)).size
+  if (!settings) return <p className="muted">Loading…</p>
+
+  const widgets = settings.dashboard
+  const setWidgets = (dashboard: Widget[]): void => {
+    const next = { ...settings, dashboard }
+    setSettings(next)
+    // Saves run in order, so a quick series of edits never lands out of order.
+    saving.current = saving.current.then(() => window.hub.saveSettings(next))
+  }
+  const replace = (w: Widget): void => setWidgets(widgets.map((x) => (x.id === w.id ? w : x)))
+  const move = (id: string, to: number): void => {
+    const from = widgets.findIndex((w) => w.id === id)
+    if (from < 0 || to < 0 || to >= widgets.length || from === to) return
+    const next = [...widgets]
+    const [w] = next.splice(from, 1)
+    next.splice(to, 0, w)
+    setWidgets(next)
+  }
+
+  const ctx: WidgetContext = { settings, news, loading, reload, onOpen }
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 19 ? 'Good afternoon' : 'Good evening'
   const today = new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })
+  const addable = WIDGET_TYPES.filter((t) => !SINGLE.includes(t.type) || !widgets.some((w) => w.type === t.type))
 
   return (
-    <div className="dashboard">
+    <div ref={grid} className={editing ? 'dashboard editing' : 'dashboard'}>
       <header className="hero enter" style={{ '--i': 0 } as React.CSSProperties}>
-        <p className="eyebrow">{today}</p>
-        <p className="greeting">
-          {greeting}
-          {settings?.displayName ? `, ${settings.displayName}` : ''}.
-        </p>
+        <div>
+          <p className="eyebrow">{today}</p>
+          <p className="greeting">
+            {greeting}
+            {settings.displayName ? `, ${settings.displayName}` : ''}.
+          </p>
+        </div>
+        <button className={editing ? 'primary' : 'ghost'} onClick={() => setEditing(!editing)}>
+          <Icon name={editing ? 'check' : 'edit'} /> {editing ? 'Done' : 'Customize'}
+        </button>
       </header>
 
-      <div className="stats">
-        {[
-          { label: 'Stories today', value: articles.length },
-          { label: 'Match your topics', value: matches },
-          { label: 'Outlets reporting', value: outlets }
-        ].map((s, i) => (
-          <div key={s.label} className="stat enter" style={{ '--i': i + 1 } as React.CSSProperties}>
-            <span className="stat-value">{loading && !news ? '—' : s.value}</span>
-            <span className="stat-label">{s.label}</span>
-          </div>
-        ))}
-      </div>
-
-      <section className="card wide glow enter" style={{ '--i': 4 } as React.CSSProperties}>
-        <header className="card-head">
-          <h2>
-            <span className="live" aria-hidden="true" />
-            Top stories
-          </h2>
-          <button className="link" onClick={() => onOpen('news')}>
-            All news <Icon name="arrow" />
+      {widgets.length === 0 && !editing && (
+        <section className="card size-wide enter">
+          <p className="muted">Your dashboard is empty.</p>
+          <button className="link" onClick={() => setEditing(true)}>
+            Add widgets <Icon name="arrow" />
           </button>
-        </header>
-        {settings && settings.topics.length === 0 && (
-          <p className="hint">
-            Showing the newest stories.{' '}
-            <button className="link" onClick={() => onOpen('settings')}>
-              Add topics
-            </button>{' '}
-            to see what matters to you first.
-          </p>
-        )}
-        {loading && !news ? <ArticleSkeleton rows={5} /> : top.length > 0 ? <ArticleList articles={top} ranked /> : <p className="muted">No stories yet.</p>}
-        <NewsStatus news={news} loading={loading} reload={reload} />
-      </section>
+        </section>
+      )}
 
-      <section className="card enter" style={{ '--i': 5 } as React.CSSProperties}>
-        <h2>
-          <Icon name="calendar" /> Next meetings
-        </h2>
-        <p className="muted">Connect a calendar to see your day here. Arrives with accounts in slices 5 to 7.</p>
-      </section>
-      <section className="card enter" style={{ '--i': 6 } as React.CSSProperties}>
-        <h2>
-          <Icon name="mail" /> Mail that needs you
-        </h2>
-        <p className="muted">Connect Gmail, Microsoft or IONOS mail to see priority messages here. Arrives in slices 5 to 8.</p>
-      </section>
+      {widgets.map((w, i) => (
+        <section
+          key={w.id}
+          data-widget={w.type}
+          className={`card widget size-${w.size} enter ${w.type === 'top-stories' ? 'glow' : ''} ${dragging === w.id ? 'dragging' : ''}`}
+          style={{ '--i': Math.min(i + 1, 8) } as React.CSSProperties}
+          draggable={editing}
+          onDragStart={(e) => {
+            setDragging(w.id)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragEnd={() => setDragging(null)}
+          onDragOver={(e) => editing && dragging && e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (dragging) move(dragging, i)
+            setDragging(null)
+          }}
+        >
+          {editing && (
+            <div className="widget-tools" aria-label={`${WIDGET_TYPES.find((t) => t.type === w.type)?.label} options`}>
+              <Icon name="grip" className="grip" />
+              <button type="button" className="tool" aria-label="Move earlier" disabled={i === 0} onClick={() => move(w.id, i - 1)}>
+                <Icon name="left" />
+              </button>
+              <button type="button" className="tool" aria-label="Move later" disabled={i === widgets.length - 1} onClick={() => move(w.id, i + 1)}>
+                <Icon name="right" />
+              </button>
+              <div className="sizes" role="group" aria-label="Size">
+                {SIZES.map((s) => (
+                  <button type="button" key={s.value} className={w.size === s.value ? 'on' : ''} aria-pressed={w.size === s.value} aria-label={s.label} title={s.label} onClick={() => replace({ ...w, size: s.value as WidgetSize })}>
+                    {w.size === 'small' ? s.label[0] : s.label}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="tool remove" aria-label="Remove widget" onClick={() => setWidgets(widgets.filter((x) => x.id !== w.id))}>
+                <Icon name="close" />
+              </button>
+            </div>
+          )}
+          <WidgetBody widget={w} ctx={ctx} />
+          {editing && <WidgetOptions widget={w} onChange={replace} />}
+        </section>
+      ))}
+
+      {editing && (
+        <section className="card size-wide add-widgets enter" style={{ '--i': 2 } as React.CSSProperties}>
+          <h2>
+            <Icon name="plus" /> Add a widget
+          </h2>
+          <div className="widget-catalog">
+            {addable.map((t) => (
+              <button key={t.type} type="button" className="catalog-item" onClick={() => setWidgets([...widgets, newWidget(t.type)])}>
+                <Icon name={t.type === 'top-stories' ? 'stories' : t.type} />
+                <span>
+                  <b>{t.label}</b>
+                  <span className="muted small">{t.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="muted small">Drag widgets or use the arrows to reorder them. Changes are saved as you go.</p>
+        </section>
+      )}
     </div>
   )
 }

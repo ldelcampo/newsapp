@@ -6,7 +6,7 @@ export const MIN_INTERVAL_MS = 15 * 60_000
 /** Longest wait after repeated failures. */
 export const MAX_BACKOFF_MS = 6 * 60 * 60_000
 
-const USER_AGENT = 'InformationHub/0.1 (+https://github.com/ldelcampo/newsapp)'
+export const USER_AGENT = 'InformationHub/0.1 (+https://github.com/ldelcampo/newsapp)'
 
 /** What we remember about one feed between fetches. Serializable, so it survives restarts. */
 export interface FeedState {

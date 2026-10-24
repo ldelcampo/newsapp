@@ -34,8 +34,10 @@ describe('SettingsStore', () => {
       topics: ['economía'],
       newsLanguages: ['es', 'en'],
       theme: 'dark',
+      onlyMyTopics: false,
       newsServerUrl: '',
-      customSources: []
+      customSources: [],
+      dashboard: DEFAULT_SETTINGS.dashboard
     })
   })
 
