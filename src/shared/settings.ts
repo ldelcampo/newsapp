@@ -20,7 +20,9 @@ export interface Settings {
   /** Dashboard widgets in display order. */
   dashboard: Widget[]
   /** Which AI checks facts. Its keys live in the OS keychain, not here. */
-  factCheck: FactCheckSettings
+  factCheck: FactCheckSettings,
+  /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
+  syncFolder: string
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,7 +34,8 @@ export const DEFAULT_SETTINGS: Settings = {
   newsServerUrl: '',
   customSources: [],
   dashboard: DEFAULT_DASHBOARD,
-  factCheck: DEFAULT_FACT_CHECK
+  factCheck: DEFAULT_FACT_CHECK,
+  syncFolder: ''
 }
 
 export const NEWS_LANGUAGES: { code: string; label: string }[] = [
@@ -83,6 +86,8 @@ export function normalizeSettings(raw: unknown): Settings {
       ? r.customSources.map(normalizeSource).filter((x): x is Source => x !== null)
       : DEFAULT_SETTINGS.customSources,
     dashboard: normalizeDashboard(r.dashboard),
-    factCheck: normalizeFactCheck(r.factCheck)
+    factCheck: normalizeFactCheck(r.factCheck),
+    // Only absolute paths (macOS/Linux or a Windows drive).
+    syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''
   }
 }

@@ -38,7 +38,8 @@ describe('SettingsStore', () => {
       newsServerUrl: '',
       customSources: [],
       dashboard: DEFAULT_SETTINGS.dashboard,
-      factCheck: DEFAULT_SETTINGS.factCheck
+      factCheck: DEFAULT_SETTINGS.factCheck,
+      syncFolder: ''
     })
   })
 

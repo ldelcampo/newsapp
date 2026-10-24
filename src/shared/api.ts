@@ -19,6 +19,19 @@ export interface NewsResult {
   articles: RankedArticle[]
 }
 
+export interface SyncStatus {
+  /** 'account': the user's account on the news server; 'folder': a shared folder. */
+  mode: 'off' | 'folder' | 'account'
+  folder: string
+  email?: string
+  server?: string
+  /** Last successful read or write of the shared file. */
+  syncedAt?: string
+  /** The computer that last wrote the shared file. */
+  lastDevice?: string
+  error?: string
+}
+
 export type SourceTest = { ok: true; count: number; sample: string[] } | { ok: false; error: string }
 
 export type UpdateState =
@@ -48,6 +61,18 @@ export interface HubApi {
   /** Status per source from the latest news load in this session. */
   sourceStatuses(): Promise<SourceStatus[]>
   testSource(source: Source): Promise<SourceTest>
+  syncStatus(): Promise<SyncStatus>
+  /** Merges the sync folder now and returns the result. */
+  syncNow(): Promise<SyncStatus>
+  /** Asks the user for a folder; null when they cancel. */
+  chooseSyncFolder(): Promise<string | null>
+  /** The iCloud Drive folder on this Mac, or null. */
+  iCloudFolder(): Promise<string | null>
+  /** Creates an account (create=true) or signs in, then starts syncing through it. */
+  syncSignIn(server: string, email: string, passphrase: string, create: boolean): Promise<SyncStatus>
+  syncSignOut(): Promise<SyncStatus>
+  /** Calls back when another computer's changes arrive; returns an unsubscribe function. */
+  onSettingsChanged(cb: (s: Settings) => void): () => void
   openExternal(url: string): Promise<void>
   /** macOS: moves the app into Applications and relaunches it from there. */
   moveToApplications(): Promise<boolean>

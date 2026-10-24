@@ -1,5 +1,7 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
+import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
 import { makeProvider } from './ai-providers'
 import { FactCheckService } from './fact-check-service'
 import { SecretStore } from './secret-store'
@@ -13,6 +15,8 @@ import { AccountService } from './accounts/service'
 import { AccountStore, type Cipher } from './accounts/store'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
+import { AccountVault } from './account'
+import { FolderRemote, ServerRemote, SettingsSync } from './settings-sync'
 import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
 import { normalizeWidget } from '../shared/widgets'
@@ -22,6 +26,7 @@ let store: SettingsStore
 let news: NewsService
 let secrets: SecretStore
 let factCheck: FactCheckService
+let sync: SettingsSync
 let accounts: AccountService
 const widgets = new WidgetService()
 
@@ -62,6 +67,29 @@ app.whenReady().then(() => {
   secrets = new SecretStore(app.getPath('userData'), safeStorage)
   factCheck = new FactCheckService(app.getPath('userData'))
   nativeTheme.themeSource = store.load().theme
+  sync = new SettingsSync(store, app.getPath('userData'), (s) => {
+    nativeTheme.themeSource = s.theme
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send('settings:changed', s)
+  })
+  const vault = new AccountVault(app.getPath('userData'), {
+    encrypt: (t) => safeStorage.encryptString(t),
+    decrypt: (b) => safeStorage.decryptString(b)
+  })
+  // The account wins over a folder when both are set.
+  const connect = (): Promise<void> => {
+    const account = vault.load()
+    if (account) {
+      const remote = new ServerRemote(account, undefined, () => {
+        vault.forget()
+        void connect()
+      })
+      return sync.use(remote, { mode: 'account', folder: '', email: account.email, server: account.server })
+    }
+    const folder = store.load().syncFolder
+    if (folder) return sync.use(new FolderRemote(folder, () => void sync.sync()), { mode: 'folder', folder })
+    return sync.use(null, { mode: 'off', folder: '' })
+  }
+  void connect()
 
   const providerFor = (id: ProviderId): ReturnType<typeof makeProvider> => {
     const fc = store.load().factCheck
@@ -126,10 +154,37 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('settings:get', () => store.load())
-  ipcMain.handle('settings:save', (_e, next: unknown) => {
-    const saved = store.save(next)
+  ipcMain.handle('settings:save', async (_e, next: unknown) => {
+    const folderBefore = store.load().syncFolder
+    const saved = sync.save(next)
+    if (saved.syncFolder !== folderBefore) await connect()
     nativeTheme.themeSource = saved.theme
     return saved
+  })
+  ipcMain.handle('sync:status', () => sync.getStatus())
+  ipcMain.handle('sync:now', async () => {
+    await sync.sync()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:sign-in', async (_e, server: unknown, email: unknown, passphrase: unknown, create: unknown) => {
+    if (typeof server !== 'string' || typeof email !== 'string' || typeof passphrase !== 'string') throw new Error('Fill in every field.')
+    await vault.signIn(server, email, passphrase, create === true)
+    await connect()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:sign-out', async () => {
+    await vault.signOut()
+    await connect()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:choose-folder', async () => {
+    const r = await dialog.showOpenDialog({ title: 'Choose a folder your computers share', properties: ['openDirectory', 'createDirectory'] })
+    return r.canceled ? null : r.filePaths[0]
+  })
+  // iCloud Drive's folder on macOS, if it is turned on.
+  ipcMain.handle('sync:icloud-folder', () => {
+    const p = join(homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs')
+    return process.platform === 'darwin' && existsSync(p) ? p : null
   })
   ipcMain.handle('news:load', () => news.load(store.load()))
   ipcMain.handle('news:source-statuses', async () => (news.lastSources.length ? news.lastSources : (await news.load(store.load())).sources))
