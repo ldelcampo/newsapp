@@ -51,7 +51,7 @@ export const DEFAULT_SOURCES: Source[] = [
   { id: 'bbcmundo', name: 'BBC Mundo', url: 'https://feeds.bbci.co.uk/mundo/rss.xml', language: 'es', region: 'UK', lean: 'center' },
   { id: 'dwes', name: 'DW Español', url: 'https://rss.dw.com/rdf/rss-sp-all', language: 'es', region: 'DE', lean: 'center' },
   { id: 'france24es', name: 'France 24 Español', url: 'https://www.france24.com/es/rss', language: 'es', region: 'FR', lean: 'center' },
-  { id: 'eluniversal', name: 'El Universal', url: 'https://www.eluniversal.com.mx/rss.xml', language: 'es', region: 'MX', lean: 'center' },
+  { id: 'eluniversal', name: 'El Universal', url: 'https://www.eluniversal.com.mx/arc/outboundfeeds/rss/?outputType=xml', language: 'es', region: 'MX', lean: 'center' },
   { id: 'elfinanciero', name: 'El Financiero', url: 'https://www.elfinanciero.com.mx/arc/outboundfeeds/rss/?outputType=xml', language: 'es', region: 'MX', lean: 'center-right' },
   { id: 'expansion', name: 'Expansión', url: 'https://expansion.mx/rss', language: 'es', region: 'MX', lean: 'center-right' },
   { id: 'animalpolitico', name: 'Animal Político', url: 'https://www.animalpolitico.com/feed', language: 'es', region: 'MX', lean: 'center-left' }
