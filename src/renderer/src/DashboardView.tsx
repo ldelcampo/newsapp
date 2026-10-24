@@ -5,6 +5,32 @@ import { Icon } from './Icon'
 import { useNews } from './useNews'
 import { WidgetBody, WidgetOptions, type WidgetContext } from './Widgets'
 
+const ROW = 2 // px; must match grid-auto-rows in styles.css
+const GAP = 18
+
+/**
+ * Masonry packing: each card spans as many tiny grid rows as its height needs, so shorter
+ * widgets slide up into the space beside taller ones instead of leaving gaps.
+ */
+function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean): void {
+  useEffect(() => {
+    const grid = ref.current
+    if (!grid) return
+    const fit = (el: HTMLElement): void => {
+      el.style.gridRowEnd = `span ${Math.ceil((el.offsetHeight + GAP) / ROW)}`
+    }
+    const sizes = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target as HTMLElement)))
+    const watch = (): void => Array.from(grid.children).forEach((c) => sizes.observe(c))
+    const added = new MutationObserver(watch)
+    watch()
+    added.observe(grid, { childList: true })
+    return () => {
+      sizes.disconnect()
+      added.disconnect()
+    }
+  }, [ref, ready])
+}
+
 /** Widget types that only make sense once on a dashboard. */
 const SINGLE: WidgetType[] = ['top-stories', 'stats', 'meetings', 'mail']
 
@@ -14,6 +40,8 @@ export function DashboardView({ onOpen }: { onOpen: (view: 'news' | 'settings') 
   const [editing, setEditing] = useState(false)
   const [dragging, setDragging] = useState<string | null>(null)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
+  const grid = useRef<HTMLDivElement>(null)
+  useMasonry(grid, settings !== null)
   useEffect(() => void window.hub.getSettings().then(setSettings), [])
 
   if (!settings) return <p className="muted">Loading…</p>
@@ -42,7 +70,7 @@ export function DashboardView({ onOpen }: { onOpen: (view: 'news' | 'settings') 
   const addable = WIDGET_TYPES.filter((t) => !SINGLE.includes(t.type) || !widgets.some((w) => w.type === t.type))
 
   return (
-    <div className={editing ? 'dashboard editing' : 'dashboard'}>
+    <div ref={grid} className={editing ? 'dashboard editing' : 'dashboard'}>
       <header className="hero enter" style={{ '--i': 0 } as React.CSSProperties}>
         <div>
           <p className="eyebrow">{today}</p>
