@@ -35,8 +35,8 @@ describe('widget data', () => {
       rates: { MXN: 18.4, EUR: 0.92 }
     })
     expect(
-      parseWeather({ current: { temperature_2m: 21.4, weather_code: 2 }, current_units: { temperature_2m: '°C' }, daily: { temperature_2m_max: [24], temperature_2m_min: [12] } })
-    ).toEqual({ temperature: 21.4, code: 2, description: 'Partly cloudy', high: 24, low: 12, unit: '°C' })
+      parseWeather({ current: { temperature_2m: 21.4, weather_code: 2, is_day: 0 }, current_units: { temperature_2m: '°C' }, daily: { temperature_2m_max: [24], temperature_2m_min: [12] } })
+    ).toEqual({ temperature: 21.4, code: 2, description: 'Partly cloudy', kind: 'partly', isDay: false, high: 24, low: 12, unit: '°C' })
     expect(parsePlaces({ results: [{ name: 'Monterrey', latitude: 25.67, longitude: -100.31, admin1: 'Nuevo León', country: 'Mexico' }, { name: 'bad' }] })).toEqual([
       { name: 'Monterrey, Nuevo León, Mexico', latitude: 25.67, longitude: -100.31 }
     ])

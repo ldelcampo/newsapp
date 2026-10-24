@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { NewsResult } from '@shared/api'
 import { filterArticles } from '@shared/ranking'
 import type { Settings } from '@shared/settings'
@@ -6,6 +6,7 @@ import { CURRENCIES, type Place, type Rates, type Weather, type Widget, type Wid
 import { ArticleList, ArticleSkeleton } from './ArticleList'
 import { Icon } from './Icon'
 import { NewsStatus } from './NewsStatus'
+import { WeatherScene } from './WeatherScene'
 
 export interface WidgetContext {
   settings: Settings
@@ -91,6 +92,41 @@ function Stats({ ctx }: { ctx: WidgetContext }): React.JSX.Element {
 
 const money = (n: number): string => n.toLocaleString(undefined, { maximumFractionDigits: n >= 10 ? 2 : 4, minimumFractionDigits: 2 })
 
+const reducedMotion = (): boolean => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+/** Animates a number from its previous value; `changed` is 'up' or 'down' briefly after a change. */
+function useCountUp(value: number): { shown: number; changed: '' | 'up' | 'down' } {
+  const [shown, setShown] = useState(value)
+  const [changed, setChanged] = useState<'' | 'up' | 'down'>('')
+  const from = useRef<number | null>(null)
+  useEffect(() => {
+    const start = from.current ?? value * 0.9
+    const first = from.current === null
+    from.current = value
+    if (start === value || reducedMotion()) return setShown(value)
+    if (!first) setChanged(value > start ? 'up' : 'down')
+    let frame = 0
+    const t0 = performance.now()
+    const step = (t: number): void => {
+      const p = Math.min(1, (t - t0) / 900)
+      setShown(start + (value - start) * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) frame = requestAnimationFrame(step)
+    }
+    frame = requestAnimationFrame(step)
+    const done = setTimeout(() => setChanged(''), 2000)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(done)
+    }
+  }, [value])
+  return { shown, changed }
+}
+
+function Rate({ value }: { value: number | undefined }): React.JSX.Element {
+  const { shown, changed } = useCountUp(value ?? 0)
+  return <span className={`rate ${changed}`}>{value !== undefined ? money(shown) : '—'}</span>
+}
+
 function Currency({ widget }: { widget: Extract<Widget, { type: 'currency' }> }): React.JSX.Element {
   const { data, error } = useLoad<Rates>(`${widget.base}:${widget.symbols.join(',')}`, () => window.hub.rates(widget.base, widget.symbols))
   return (
@@ -106,7 +142,7 @@ function Currency({ widget }: { widget: Extract<Widget, { type: 'currency' }> })
             {widget.symbols.map((c) => (
               <li key={c}>
                 <span className="muted">1 {data.base} =</span>
-                <span className="rate">{data.rates[c] !== undefined ? money(data.rates[c]) : '—'}</span>
+                <Rate value={data.rates[c]} />
                 <span className="code">{c}</span>
               </li>
             ))}
@@ -130,10 +166,10 @@ function WeatherCard({ widget }: { widget: Extract<Widget, { type: 'weather' }> 
       {!data && !error && <ArticleSkeleton rows={1} />}
       {data && (
         <div className="weather">
+          <WeatherScene kind={data.kind} isDay={data.isDay} />
           <span className="temp">{Math.round(data.temperature)}°</span>
-          <span>
+          <span className="weather-text">
             {data.description}
-            <br />
             <span className="muted small">
               High {Math.round(data.high)}° · Low {Math.round(data.low)}°
             </span>
@@ -155,8 +191,16 @@ function useNow(everyMs: number): Date {
 
 export const cityOf = (zone: string): string => zone.split('/').pop()!.replace(/_/g, ' ')
 
+/** Hours and minutes in a zone, with the separator as its own part so it can blink. */
+function timeParts(now: Date, zone: string): { hm: [string, string]; suffix: string; hour: number } {
+  const parts = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: '2-digit', minute: '2-digit' }).formatToParts(now)
+  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? ''
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', hourCycle: 'h23' }).format(now))
+  return { hm: [get('hour'), get('minute')], suffix: get('dayPeriod'), hour }
+}
+
 function Clocks({ widget }: { widget: Extract<Widget, { type: 'clocks' }> }): React.JSX.Element {
-  const now = useNow(15_000)
+  const now = useNow(1_000)
   const localDay = now.toLocaleDateString('en-CA')
   return (
     <>
@@ -166,10 +210,18 @@ function Clocks({ widget }: { widget: Extract<Widget, { type: 'clocks' }> }): Re
       <ul className="clocks">
         {widget.zones.map((z) => {
           const day = now.toLocaleDateString('en-CA', { timeZone: z })
+          const t = timeParts(now, z)
+          const daytime = t.hour >= 6 && t.hour < 19
           return (
             <li key={z}>
-              <span>{cityOf(z)}</span>
-              <span className="time">{now.toLocaleTimeString(undefined, { timeZone: z, hour: '2-digit', minute: '2-digit' })}</span>
+              <span className={daytime ? 'daypart day' : 'daypart night'} title={daytime ? 'Daytime' : 'Night'} aria-hidden="true" />
+              <span className="city">{cityOf(z)}</span>
+              <span className="time">
+                {t.hm[0]}
+                <span className="colon">:</span>
+                {t.hm[1]}
+                {t.suffix && <small> {t.suffix}</small>}
+              </span>
               <span className="muted small">{day === localDay ? 'Today' : day > localDay ? 'Tomorrow' : 'Yesterday'}</span>
             </li>
           )

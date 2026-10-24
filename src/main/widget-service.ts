@@ -40,7 +40,7 @@ export class WidgetService {
   weather(place: Place): Promise<Weather> {
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude.toFixed(2)}&longitude=${place.longitude.toFixed(2)}` +
-      '&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1'
+      '&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1'
     return this.cached(url, 30 * 60_000, parseWeather)
   }
 

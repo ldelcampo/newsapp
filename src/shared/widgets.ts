@@ -127,28 +127,35 @@ export interface Weather {
   temperature: number
   code: number
   description: string
+  kind: WeatherKind
+  isDay: boolean
   high: number
   low: number
   unit: string
 }
 
-const WMO: [number[], string][] = [
-  [[0], 'Clear sky'],
-  [[1, 2], 'Partly cloudy'],
-  [[3], 'Overcast'],
-  [[45, 48], 'Fog'],
-  [[51, 53, 55, 56, 57], 'Drizzle'],
-  [[61, 63, 65, 66, 67, 80, 81, 82], 'Rain'],
-  [[71, 73, 75, 77, 85, 86], 'Snow'],
-  [[95, 96, 99], 'Thunderstorm']
+/** Which animated scene the weather widget shows. */
+export type WeatherKind = 'clear' | 'partly' | 'cloudy' | 'fog' | 'drizzle' | 'rain' | 'snow' | 'storm'
+
+/** WMO weather codes, as Open-Meteo reports them. */
+const WMO: [number[], string, WeatherKind][] = [
+  [[0], 'Clear sky', 'clear'],
+  [[1, 2], 'Partly cloudy', 'partly'],
+  [[3], 'Overcast', 'cloudy'],
+  [[45, 48], 'Fog', 'fog'],
+  [[51, 53, 55, 56, 57], 'Drizzle', 'drizzle'],
+  [[61, 63, 65, 66, 67, 80, 81, 82], 'Rain', 'rain'],
+  [[71, 73, 75, 77, 85, 86], 'Snow', 'snow'],
+  [[95, 96, 99], 'Thunderstorm', 'storm']
 ]
 
 export const describeWeather = (code: number): string => WMO.find(([codes]) => codes.includes(code))?.[1] ?? 'Unknown'
+export const weatherKind = (code: number): WeatherKind => WMO.find(([codes]) => codes.includes(code))?.[2] ?? 'cloudy'
 
-/** Open-Meteo's /forecast response with current temperature_2m,weather_code and daily max/min. */
+/** Open-Meteo's /forecast response with current temperature_2m,weather_code,is_day and daily max/min. */
 export function parseWeather(json: unknown): Weather {
   const j = json as {
-    current?: { temperature_2m?: unknown; weather_code?: unknown }
+    current?: { temperature_2m?: unknown; weather_code?: unknown; is_day?: unknown }
     current_units?: { temperature_2m?: unknown }
     daily?: { temperature_2m_max?: unknown[]; temperature_2m_min?: unknown[] }
   }
@@ -157,7 +164,7 @@ export function parseWeather(json: unknown): Weather {
   if (typeof t !== 'number' || typeof code !== 'number') throw new Error('Unexpected weather response')
   const high = Number(j.daily?.temperature_2m_max?.[0] ?? t)
   const low = Number(j.daily?.temperature_2m_min?.[0] ?? t)
-  return { temperature: t, code, description: describeWeather(code), high, low, unit: String(j.current_units?.temperature_2m ?? '°C') }
+  return { temperature: t, code, description: describeWeather(code), kind: weatherKind(code), isDay: j.current?.is_day !== 0, high, low, unit: String(j.current_units?.temperature_2m ?? '°C') }
 }
 
 /** Open-Meteo's geocoding /search response. */
