@@ -26,6 +26,20 @@ Every push builds the macOS installer in GitHub Actions (Windows and Linux build
 
 Windows builds are not signed yet: on the SmartScreen screen, choose More info, then Run anyway.
 
+## Google accounts (Gmail and Google Calendar)
+
+The app signs in with Google's installed-app flow (OAuth with PKCE and a loopback redirect to `127.0.0.1`). It reads mail (`gmail.readonly`) and calendars (`calendar.readonly`); tokens stay on the computer, encrypted with the system keychain. Each account has Mail and Calendar switches; turning Calendar off makes it mail only, and the app then never asks Google for calendar access.
+
+The build needs a Google OAuth client of type **Desktop app**:
+
+1. In [Google Cloud console](https://console.cloud.google.com/), create a project (for example "Information Hub").
+2. APIs & Services, Library: enable **Gmail API** and **Google Calendar API**.
+3. Google Auth Platform: get started with User type **External**. Under Data access, add the scopes `gmail.readonly`, `calendar.readonly`, `openid`, `email` and `profile`. Under Audience, add each tester's Google address as a test user (up to 100).
+4. Google Auth Platform, Clients: create a client with application type **Desktop app**. Copy its client ID and client secret.
+5. In GitHub, Settings, Secrets and variables, Actions: add them as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. CI bakes them into the installers. To run from source, put them in `.env.local` as `MAIN_VITE_GOOGLE_CLIENT_ID=…` and `MAIN_VITE_GOOGLE_CLIENT_SECRET=…` (git ignores that file).
+
+Google treats a Desktop app's client secret as non-confidential, which is why it may ship inside the app. While the app is in Testing, only listed test users can sign in and Google expires their sign-in after 7 days, so the account asks to reconnect weekly. Publishing to everyone needs Google's verification, and `gmail.readonly` is a restricted scope that also needs a yearly third-party security assessment.
+
 ## Layout
 
 - `src/main`: Electron main process. Owns files, network and credentials.

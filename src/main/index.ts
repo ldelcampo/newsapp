@@ -3,7 +3,14 @@ import { app, BrowserWindow, ipcMain, nativeTheme, safeStorage, shell } from 'el
 import { makeProvider } from './ai-providers'
 import { FactCheckService } from './fact-check-service'
 import { SecretStore } from './secret-store'
-import { PROVIDERS, SECRET_NAMES, SYSTEM_PROMPT, type ProviderId, type SecretName } from '../shared/factcheck'
+import { PROVIDERS as AI_PROVIDERS, SECRET_NAMES, SYSTEM_PROMPT, type ProviderId, type SecretName } from '../shared/factcheck'
+import { PROVIDERS, type Provider } from '../shared/accounts'
+import { GoogleConnector } from './accounts/google'
+import { googleClient } from './accounts/google-client'
+import { ImapConnector, testImap } from './accounts/imap'
+import { MicrosoftConnector, MsalTokens } from './accounts/microsoft'
+import { AccountService } from './accounts/service'
+import { AccountStore, type Cipher } from './accounts/store'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
 import { startUpdater } from './updater'
@@ -15,6 +22,7 @@ let store: SettingsStore
 let news: NewsService
 let secrets: SecretStore
 let factCheck: FactCheckService
+let accounts: AccountService
 const widgets = new WidgetService()
 
 function createWindow(): void {
@@ -86,7 +94,7 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('factcheck:saved', (_e, articleId: unknown) => (typeof articleId === 'string' ? factCheck.saved(articleId) : null))
   ipcMain.handle('factcheck:test', async (_e, id: unknown) => {
-    if (!PROVIDERS.some((p) => p.id === id)) return { ok: false, error: 'Unknown provider.' }
+    if (!AI_PROVIDERS.some((p) => p.id === id)) return { ok: false, error: 'Unknown provider.' }
     const provider = providerFor(id as ProviderId)
     if (!provider) return { ok: false, error: 'Save a key for this provider first.' }
     try {
@@ -101,6 +109,20 @@ app.whenReady().then(() => {
     if (!SECRET_NAMES.includes(name as SecretName) || typeof value !== 'string' || value.length > 500) throw new Error('That key could not be saved.')
     secrets.set(name as SecretName, value)
     return secrets.which()
+  })
+  // Sign-ins are encrypted with the OS keychain; without one, nothing secret is written.
+  const cipher: Cipher = {
+    encrypt: (plain) => {
+      if (!safeStorage.isEncryptionAvailable()) throw new Error('This computer has no keychain to keep sign-ins safe.')
+      return safeStorage.encryptString(plain)
+    },
+    decrypt: (data) => safeStorage.decryptString(data)
+  }
+  const accountStore = new AccountStore(app.getPath('userData'), cipher)
+  accounts = new AccountService(accountStore, {
+    microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url))),
+    google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) }),
+    imap: new ImapConnector(accountStore)
   })
 
   ipcMain.handle('settings:get', () => store.load())
@@ -130,6 +152,32 @@ app.whenReady().then(() => {
     return w?.type === 'weather' ? widgets.weather(w.place) : null
   })
   ipcMain.handle('widgets:places', (_e, query: unknown) => (typeof query === 'string' ? widgets.places(query.slice(0, 80)) : []))
+  const provider = (p: unknown): Provider => {
+    const found = PROVIDERS.find((x) => x.provider === p)
+    if (!found) throw new Error('Unknown account type')
+    return found.provider
+  }
+  const id = (v: unknown): string => {
+    if (typeof v !== 'string' || !v) throw new Error('Unknown account')
+    return v
+  }
+  ipcMain.handle('accounts:list', () => accounts.list())
+  ipcMain.handle('accounts:add', (_e, p: unknown, input: unknown) => accounts.add(provider(p), input))
+  ipcMain.handle('accounts:update', (_e, a: unknown, patch: unknown) => {
+    const r = (patch ?? {}) as Record<string, unknown>
+    return accounts.update(id(a), {
+      ...(typeof r.mail === 'boolean' ? { mail: r.mail } : {}),
+      ...(typeof r.calendar === 'boolean' ? { calendar: r.calendar } : {})
+    })
+  })
+  ipcMain.handle('accounts:reconnect', (_e, a: unknown) => accounts.reconnect(id(a)))
+  ipcMain.handle('accounts:remove', (_e, a: unknown) => accounts.remove(id(a)))
+  ipcMain.handle('accounts:test-imap', async (_e, input: unknown) => {
+    const { caldavUrl: _found, ...result } = await testImap(input)
+    return result
+  })
+  ipcMain.handle('accounts:mail', () => accounts.recentMail())
+  ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
     platform: process.platform,
