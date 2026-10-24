@@ -318,15 +318,15 @@ function PlacePicker({ place, onPick }: { place: Place; onPick: (p: Place) => vo
       .findPlaces(query)
       .then((r) => {
         setFound(r)
-        if (r.length === 0) setError('No places found.')
+        if (r.length === 0) setError('No places found. Try just the city name.')
       })
-      .catch(() => setError('Search failed. Check your connection.'))
+      .catch((e: Error) => setError(`Search failed: ${e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`))
   }
   return (
     <div className="widget-option">
       <span className="small muted">Place: {place.name}</span>
       <div className="row">
-        <input aria-label="Find a place" placeholder="Find a city" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search(e)} />
+        <input aria-label="Find a place" placeholder="City, optionally with state or country" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && search(e)} />
         <button type="button" className="ghost" onClick={search}>
           Search
         </button>

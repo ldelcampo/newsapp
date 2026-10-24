@@ -1,5 +1,5 @@
 import { USER_AGENT } from '../shared/polite-fetch'
-import { parsePlaces, parseRates, parseWeather, type Place, type Rates, type Weather } from '../shared/widgets'
+import { parsePlaces, parseRates, placeQuery, parseWeather, type Place, type Rates, type Weather } from '../shared/widgets'
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -44,10 +44,11 @@ export class WidgetService {
     return this.cached(url, 30 * 60_000, parseWeather)
   }
 
-  places(query: string): Promise<Place[]> {
-    const q = query.trim()
-    if (q.length < 2) return Promise.resolve([])
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&format=json`
-    return this.cached(url, 24 * 60 * 60_000, parsePlaces)
+  async places(query: string): Promise<Place[]> {
+    const { name, near } = placeQuery(query)
+    if (name.length < 2) return []
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${near.length ? 20 : 6}&format=json`
+    // The raw answer is cached, since the same name can be narrowed in different ways.
+    return parsePlaces(await this.cached(url, 24 * 60 * 60_000, (j) => j), near).slice(0, 6)
   }
 }
