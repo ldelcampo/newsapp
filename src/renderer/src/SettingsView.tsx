@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
 import { JiraCard } from './JiraCard'
+import { AccountsCard } from './AccountsCard'
 import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
 import { Icon } from './Icon'
@@ -84,6 +85,11 @@ export function SettingsView(): React.JSX.Element {
       </section>
 
       <section className="card enter" style={{ '--i': 2 } as React.CSSProperties}>
+        <h2>Accounts</h2>
+        <AccountsCard />
+      </section>
+
+      <section className="card enter" style={{ '--i': 3 } as React.CSSProperties}>
         <h2>News</h2>
         <label className="field">
           <span>Topics</span>
@@ -124,7 +130,7 @@ export function SettingsView(): React.JSX.Element {
         </label>
       </section>
 
-      <section className="card enter" style={{ '--i': 3 } as React.CSSProperties}>
+      <section className="card enter" style={{ '--i': 4 } as React.CSSProperties}>
         <h2>Sources</h2>
         <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
       </section>

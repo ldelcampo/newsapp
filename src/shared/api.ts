@@ -1,4 +1,5 @@
 import type { TicketResult } from './jira'
+import type { Account, CalendarEvent, ConnectionTest, MailMessage, Provider } from './accounts'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -32,6 +33,12 @@ export type UpdateState =
   | { status: 'ready'; version: string }
   | { status: 'error'; message: string }
 
+/** Mail or events from every enabled account, plus a note for each account that failed. */
+export interface AccountFeed<T> {
+  items: T[]
+  problems: string[]
+}
+
 /** What the preload script exposes to the renderer as `window.hub`. */
 export interface HubApi {
   getSettings(): Promise<Settings>
@@ -58,6 +65,20 @@ export interface HubApi {
   hasJevKey(): Promise<boolean>
   /** An empty key removes it. Returns whether a key is stored. */
   setJevKey(key: string): Promise<boolean>
+  /** Connected mail and calendar accounts. */
+  accounts(): Promise<Account[]>
+  /** Signs in (Microsoft, Google) or checks the typed details (IMAP), then saves the account. */
+  addAccount(provider: Provider, input?: unknown): Promise<Account>
+  updateAccount(id: string, patch: { mail?: boolean; calendar?: boolean }): Promise<Account>
+  /** Signs in again after the provider rejected the saved sign-in. */
+  reconnectAccount(id: string): Promise<Account>
+  removeAccount(id: string): Promise<void>
+  /** Checks IMAP and SMTP logins and looks for a calendar, without saving anything. */
+  testImap(input: unknown): Promise<ConnectionTest>
+  /** Newest inbox mail across accounts with mail switched on (cached for 2 minutes). */
+  recentMail(): Promise<AccountFeed<MailMessage>>
+  /** Events from today through the next 7 days, across accounts with calendar switched on (cached for 5 minutes). */
+  upcomingEvents(): Promise<AccountFeed<CalendarEvent>>
   getUpdate(): Promise<UpdateState>
   checkForUpdate(): Promise<UpdateState>
   installUpdate(): Promise<void>
