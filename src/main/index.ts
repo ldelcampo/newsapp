@@ -10,7 +10,7 @@ import { PROVIDERS, type Provider } from '../shared/accounts'
 import { GoogleConnector } from './accounts/google'
 import { googleClient } from './accounts/google-client'
 import { ImapConnector, testImap } from './accounts/imap'
-import { MicrosoftConnector, MsalTokens } from './accounts/microsoft'
+import { MICROSOFT_CLIENT_ID, MicrosoftConnector, MsalTokens } from './accounts/microsoft'
 import { AccountService } from './accounts/service'
 import { AccountStore, type Cipher } from './accounts/store'
 import { NewsService, testSource } from './news-service'
@@ -160,7 +160,8 @@ app.whenReady().then(() => {
   }
   const accountStore = new AccountStore(app.getPath('userData'), cipher)
   accounts = new AccountService(accountStore, {
-    microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url))),
+    // Microsoft sign-in waits for an Entra app registration (see README).
+    ...(MICROSOFT_CLIENT_ID ? { microsoft: new MicrosoftConnector(new MsalTokens(accountStore, (url) => shell.openExternal(url))) } : {}),
     google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) }),
     imap: new ImapConnector(accountStore)
   })
@@ -269,6 +270,7 @@ app.whenReady().then(() => {
     return v
   }
   ipcMain.handle('accounts:list', () => accounts.list())
+  ipcMain.handle('accounts:providers', () => accounts.providers())
   ipcMain.handle('accounts:add', (_e, p: unknown, input: unknown) => accounts.add(provider(p), input))
   ipcMain.handle('accounts:update', (_e, a: unknown, patch: unknown) => {
     const r = (patch ?? {}) as Record<string, unknown>
