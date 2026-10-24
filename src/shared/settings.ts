@@ -9,7 +9,7 @@ export interface Settings {
   topics: string[]
   /** ISO 639-1 codes of the languages news may be in. */
   newsLanguages: string[]
-  /** Where the shared news server runs. */
+  /** Where the shared news server runs; empty means this computer fetches the feeds itself. */
   newsServerUrl: string
   /** Sources this user added; the app fetches them itself. */
   customSources: Source[]
@@ -17,10 +17,10 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   displayName: '',
-  theme: 'system',
+  theme: 'dark',
   topics: [],
   newsLanguages: ['en'],
-  newsServerUrl: 'http://localhost:8787',
+  newsServerUrl: '',
   customSources: []
 }
 
@@ -64,7 +64,7 @@ export function normalizeSettings(raw: unknown): Settings {
     topics: strings(r.topics) ?? DEFAULT_SETTINGS.topics,
     newsLanguages: langs && langs.length > 0 ? langs : DEFAULT_SETTINGS.newsLanguages,
     newsServerUrl:
-      typeof r.newsServerUrl === 'string' && /^https?:\/\//.test(r.newsServerUrl.trim())
+      typeof r.newsServerUrl === 'string' && (r.newsServerUrl.trim() === '' || /^https?:\/\//.test(r.newsServerUrl.trim()))
         ? r.newsServerUrl.trim().replace(/\/+$/, '')
         : DEFAULT_SETTINGS.newsServerUrl,
     customSources: Array.isArray(r.customSources)

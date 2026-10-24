@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
 import { SourcesEditor } from './SourcesEditor'
+import { applyTheme } from './theme'
 
 export function SettingsView(): React.JSX.Element {
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -33,73 +34,72 @@ export function SettingsView(): React.JSX.Element {
     const topics = topicsText.split(',').map((t) => t.trim()).filter(Boolean)
     const saved = await window.hub.saveSettings({ ...settings, topics })
     setSettings(saved)
+    applyTheme(saved.theme)
     setTopicsText(saved.topics.join(', '))
     setStatus('Saved')
   }
 
   return (
     <form className="settings" onSubmit={save}>
-      <label className="field">
-        <span>Your name</span>
-        <input
-          id="displayName"
-          value={settings.displayName}
-          onChange={(e) => update({ displayName: e.target.value })}
-          placeholder="Shown on the Today screen"
-        />
-      </label>
-
-      <label className="field">
-        <span>Theme</span>
-        <select id="theme" value={settings.theme} onChange={(e) => update({ theme: e.target.value as Theme })}>
-          <option value="system">Match system</option>
-          <option value="light">Light</option>
-          <option value="dark">Dark</option>
-        </select>
-      </label>
-
-      <label className="field">
-        <span>News topics</span>
-        <input
-          id="topics"
-          value={topicsText}
-          onChange={(e) => {
-            setTopicsText(e.target.value)
-            setStatus('')
-          }}
-          placeholder="economy, artificial intelligence, Mexico"
-        />
-        <small className="muted">Separate topics with commas.</small>
-      </label>
-
-      <fieldset className="field">
-        <legend>News languages</legend>
-        <div className="chips">
-          {NEWS_LANGUAGES.map((l) => (
-            <label key={l.code} className="chip">
-              <input
-                type="checkbox"
-                checked={settings.newsLanguages.includes(l.code)}
-                onChange={() => toggleLanguage(l.code)}
-              />
-              {l.label}
-            </label>
-          ))}
+      <section className="card enter" style={{ '--i': 0 } as React.CSSProperties}>
+        <h2>You</h2>
+        <div className="grid2">
+          <label className="field">
+            <span>Your name</span>
+            <input id="displayName" value={settings.displayName} onChange={(e) => update({ displayName: e.target.value })} placeholder="Shown on the dashboard" />
+          </label>
+          <label className="field">
+            <span>Theme</span>
+            <select id="theme" value={settings.theme} onChange={(e) => update({ theme: e.target.value as Theme })}>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="system">Match system</option>
+            </select>
+          </label>
         </div>
-      </fieldset>
+      </section>
 
-      <label className="field">
-        <span>News server</span>
-        <input id="newsServerUrl" value={settings.newsServerUrl} onChange={(e) => update({ newsServerUrl: e.target.value })} />
-        <small className="muted">Shared server that collects the included sources. Your topics never leave this computer.</small>
-      </label>
+      <section className="card enter" style={{ '--i': 1 } as React.CSSProperties}>
+        <h2>News</h2>
+        <label className="field">
+          <span>Topics</span>
+          <input
+            id="topics"
+            value={topicsText}
+            onChange={(e) => {
+              setTopicsText(e.target.value)
+              setStatus('')
+            }}
+            placeholder="economy, artificial intelligence, Mexico"
+          />
+          <small className="muted">Separate topics with commas. Stories that match them come first.</small>
+        </label>
 
-      <fieldset className="field">
-        <legend>News sources</legend>
+        <fieldset className="field">
+          <legend>Languages</legend>
+          <div className="chips">
+            {NEWS_LANGUAGES.map((l) => (
+              <label key={l.code} className={settings.newsLanguages.includes(l.code) ? 'chip on' : 'chip'}>
+                <input type="checkbox" checked={settings.newsLanguages.includes(l.code)} onChange={() => toggleLanguage(l.code)} />
+                {l.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <label className="field">
+          <span>News server</span>
+          <input id="newsServerUrl" value={settings.newsServerUrl} placeholder="Empty: this computer fetches the news itself" onChange={(e) => update({ newsServerUrl: e.target.value })} />
+          <small className="muted">A shared server collects the included sources for everyone. Your topics never leave this computer.</small>
+        </label>
+      </section>
+
+      <section className="card enter" style={{ '--i': 2 } as React.CSSProperties}>
+        <h2>Sources</h2>
         <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
-      </fieldset>
+      </section>
 
-      <div className="actions">
+      <div className="actions sticky-save">
         <button type="submit" className="primary">Save</button>
         <span role="status" className="ok">{status}</span>
       </div>

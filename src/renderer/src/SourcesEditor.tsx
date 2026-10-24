@@ -106,7 +106,7 @@ export function SourcesEditor({ sources, onChange }: { sources: Source[]; onChan
           )}
         </div>
         <div className="actions">
-          <button type="button" className="secondary" onClick={runTest} disabled={testing || !draft.name || !draft.url}>
+          <button type="button" className="ghost" onClick={runTest} disabled={testing || !draft.name || !draft.url}>
             {testing ? 'Testing…' : 'Test feed'}
           </button>
           <button type="button" className="primary" onClick={add} disabled={!test?.ok}>

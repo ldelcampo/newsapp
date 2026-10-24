@@ -7,6 +7,8 @@ export interface NewsResult {
   fetchedAt: string
   /** True when the server was unreachable and cached articles are shown. */
   offline: boolean
+  /** Where the included sources came from. */
+  via: 'server' | 'this computer'
   /** Human-readable problems with the server or the user's own sources. */
   problems: string[]
   articles: RankedArticle[]
