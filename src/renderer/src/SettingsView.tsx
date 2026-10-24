@@ -3,8 +3,8 @@ import { NEWS_LANGUAGES, type Settings, type Theme } from '@shared/settings'
 import { SourcesEditor } from './SourcesEditor'
 import { applyTheme } from './theme'
 import { Icon } from './Icon'
-import type { SyncStatus, UpdateState } from '@shared/api'
-import { timeAgo } from './useNews'
+import type { UpdateState } from '@shared/api'
+import { SyncCard } from './SyncCard'
 
 function describeUpdate(u: UpdateState): string {
   switch (u.status) {
@@ -26,8 +26,6 @@ export function SettingsView(): React.JSX.Element {
   const [status, setStatus] = useState('')
   const [updateState, setUpdateState] = useState<UpdateState | null>(null)
   const [info, setInfo] = useState<{ version: string; platform: string; dataDir: string } | null>(null)
-  const [sync, setSync] = useState<SyncStatus | null>(null)
-  const [iCloud, setICloud] = useState<string | null>(null)
 
   useEffect(() => {
     void window.hub.getSettings().then((s) => {
@@ -35,8 +33,6 @@ export function SettingsView(): React.JSX.Element {
       setTopicsText(s.topics.join(', '))
     })
     void window.hub.appInfo().then(setInfo)
-    void window.hub.syncStatus().then(setSync)
-    void window.hub.iCloudFolder().then(setICloud)
     return window.hub.onUpdate(setUpdateState)
   }, [])
 
@@ -52,7 +48,6 @@ export function SettingsView(): React.JSX.Element {
     const saved = await window.hub.saveSettings({ ...settings, syncFolder: folder })
     setSettings(saved)
     setTopicsText(saved.topics.join(', '))
-    setSync(await window.hub.syncStatus())
   }
 
   const toggleLanguage = (code: string): void => {
@@ -136,49 +131,7 @@ export function SettingsView(): React.JSX.Element {
         <SourcesEditor sources={settings.customSources} onChange={(customSources) => update({ customSources })} />
       </section>
 
-      <section className="card enter" style={{ '--i': 3 } as React.CSSProperties}>
-        <h2>Sync between your computers</h2>
-        <p className="muted small">
-          Your topics, languages, sources, dashboard and theme follow you to every computer that uses the same folder. Mail, accounts and API keys stay on each
-          computer.
-        </p>
-        {settings.syncFolder ? (
-          <>
-            <p className="small">
-              Syncing through <code>{settings.syncFolder.replace(/^.*Mobile Documents\/com~apple~CloudDocs/, 'iCloud Drive')}</code>
-            </p>
-            {sync?.error ? (
-              <p className="error small">{sync.error}</p>
-            ) : (
-              sync?.syncedAt && (
-                <p className="muted small">
-                  Up to date {timeAgo(sync.syncedAt)}
-                  {sync.lastDevice ? ` · last change from ${sync.lastDevice}` : ''}
-                </p>
-              )
-            )}
-            <div className="actions">
-              <button type="button" className="ghost" onClick={() => void window.hub.syncNow().then(setSync)}>
-                <Icon name="refresh" /> Sync now
-              </button>
-              <button type="button" className="ghost" onClick={() => void useSyncFolder('')}>
-                Stop syncing
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="actions">
-            {iCloud && (
-              <button type="button" className="primary" onClick={() => void useSyncFolder(iCloud)}>
-                Use iCloud Drive
-              </button>
-            )}
-            <button type="button" className="ghost" onClick={() => void window.hub.chooseSyncFolder().then((f) => (f ? useSyncFolder(f) : undefined))}>
-              Choose a folder…
-            </button>
-          </div>
-        )}
-      </section>
+      <SyncCard settings={settings} onFolder={useSyncFolder} />
 
       <div className="actions sticky-save">
         <button type="submit" className="primary">Save</button>

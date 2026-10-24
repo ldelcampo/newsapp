@@ -1,10 +1,11 @@
 import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
-import { SettingsSync } from './settings-sync'
+import { AccountVault } from './account'
+import { FolderRemote, ServerRemote, SettingsSync } from './settings-sync'
 import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
 import { normalizeWidget } from '../shared/widgets'
@@ -54,17 +55,48 @@ app.whenReady().then(() => {
     nativeTheme.themeSource = s.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('settings:changed', s)
   })
-  sync.start(store.load().syncFolder)
+  const vault = new AccountVault(app.getPath('userData'), {
+    encrypt: (t) => safeStorage.encryptString(t),
+    decrypt: (b) => safeStorage.decryptString(b)
+  })
+  // The account wins over a folder when both are set.
+  const connect = (): Promise<void> => {
+    const account = vault.load()
+    if (account) {
+      const remote = new ServerRemote(account, undefined, () => {
+        vault.forget()
+        void connect()
+      })
+      return sync.use(remote, { mode: 'account', folder: '', email: account.email, server: account.server })
+    }
+    const folder = store.load().syncFolder
+    if (folder) return sync.use(new FolderRemote(folder, () => void sync.sync()), { mode: 'folder', folder })
+    return sync.use(null, { mode: 'off', folder: '' })
+  }
+  void connect()
 
   ipcMain.handle('settings:get', () => store.load())
-  ipcMain.handle('settings:save', (_e, next: unknown) => {
+  ipcMain.handle('settings:save', async (_e, next: unknown) => {
+    const folderBefore = store.load().syncFolder
     const saved = sync.save(next)
+    if (saved.syncFolder !== folderBefore) await connect()
     nativeTheme.themeSource = saved.theme
     return saved
   })
   ipcMain.handle('sync:status', () => sync.getStatus())
-  ipcMain.handle('sync:now', () => {
-    sync.sync()
+  ipcMain.handle('sync:now', async () => {
+    await sync.sync()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:sign-in', async (_e, server: unknown, email: unknown, passphrase: unknown, create: unknown) => {
+    if (typeof server !== 'string' || typeof email !== 'string' || typeof passphrase !== 'string') throw new Error('Fill in every field.')
+    await vault.signIn(server, email, passphrase, create === true)
+    await connect()
+    return sync.getStatus()
+  })
+  ipcMain.handle('sync:sign-out', async () => {
+    await vault.signOut()
+    await connect()
     return sync.getStatus()
   })
   ipcMain.handle('sync:choose-folder', async () => {

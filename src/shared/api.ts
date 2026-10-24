@@ -18,7 +18,11 @@ export interface NewsResult {
 }
 
 export interface SyncStatus {
+  /** 'account': the user's account on the news server; 'folder': a shared folder. */
+  mode: 'off' | 'folder' | 'account'
   folder: string
+  email?: string
+  server?: string
   /** Last successful read or write of the shared file. */
   syncedAt?: string
   /** The computer that last wrote the shared file. */
@@ -56,6 +60,9 @@ export interface HubApi {
   chooseSyncFolder(): Promise<string | null>
   /** The iCloud Drive folder on this Mac, or null. */
   iCloudFolder(): Promise<string | null>
+  /** Creates an account (create=true) or signs in, then starts syncing through it. */
+  syncSignIn(server: string, email: string, passphrase: string, create: boolean): Promise<SyncStatus>
+  syncSignOut(): Promise<SyncStatus>
   /** Calls back when another computer's changes arrive; returns an unsubscribe function. */
   onSettingsChanged(cb: (s: Settings) => void): () => void
   openExternal(url: string): Promise<void>
