@@ -109,6 +109,9 @@ export function AccountsCard(): React.JSX.Element {
         />
       )}
       <div className="actions add-account">
+        <button type="button" className="ghost" disabled={!!busy} onClick={() => void add('microsoft')}>
+          <Icon name="plus" /> {busy === 'add:microsoft' ? 'Waiting for Microsoft…' : 'Add Microsoft account'}
+        </button>
         <button type="button" className="ghost" disabled={!!busy} onClick={() => void add('google')}>
           <Icon name="plus" /> {busy === 'add:google' ? 'Waiting for Google…' : 'Add Google account'}
         </button>

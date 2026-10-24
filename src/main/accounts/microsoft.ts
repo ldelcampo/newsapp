@@ -129,12 +129,23 @@ export class MicrosoftConnector implements Connector {
     }
   }
 
+  /** Called with the switches as the user wants them, e.g. calendar just turned on. */
   async reconsent(account: Account): Promise<Account> {
-    const user = await this.tokens.signIn(this.scopes(true))
+    const scopes = this.scopes(account.calendar)
+    // Already granted (e.g. calendar was switched off and on again): no browser needed.
+    if (account.status !== 'reauth') {
+      try {
+        await this.tokens.token(homeIdOf(account), scopes)
+        return account
+      } catch {
+        // Fall through to an interactive sign-in.
+      }
+    }
+    const user = await this.tokens.signIn(scopes)
     if (ID_PREFIX + user.homeAccountId !== account.id) {
       throw new Error(`You signed in as ${user.username}. Choose ${account.email} to update this account.`)
     }
-    return { ...account, email: user.username, name: user.name || account.name, calendar: true }
+    return { ...account, email: user.username, name: user.name || account.name }
   }
 
   async remove(account: Account): Promise<void> {

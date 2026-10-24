@@ -1,0 +1,175 @@
+import { useEffect, useState } from 'react'
+import { meetingPhase, type Account, type CalendarEvent, type MailMessage } from '@shared/accounts'
+import { Icon } from './Icon'
+import { timeAgo } from './useNews'
+
+/** Which account an item came from, shown only when more than one account is connected. */
+function AccountTag({ accounts, id }: { accounts: Account[]; id: string }): React.JSX.Element | null {
+  if (accounts.length < 2) return null
+  const a = accounts.find((x) => x.id === id)
+  return a ? <span className={`acct acct-${a.provider}`}>{a.email || a.name}</span> : null
+}
+
+export function MailList({ mail, accounts, compact = false }: { mail: MailMessage[]; accounts: Account[]; compact?: boolean }): React.JSX.Element {
+  return (
+    <ol className={`mail ${compact ? 'compact' : ''}`}>
+      {mail.map((m, i) => (
+        <li key={`${m.accountId}:${m.id}`} className={m.unread ? 'unread' : ''} style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
+          <span className="dot" aria-label={m.unread ? 'Unread' : undefined} />
+          <div className="mail-body">
+            <div className="mail-top">
+              <span className="from">{m.from.name || m.from.email}</span>
+              <span className="muted small">{timeAgo(m.receivedAt)}</span>
+            </div>
+            {m.webUrl ? (
+              <button className="article-link subject" onClick={() => void window.hub.openExternal(m.webUrl!)}>
+                {m.subject}
+              </button>
+            ) : (
+              <span className="subject">{m.subject}</span>
+            )}
+            {!compact && m.snippet && <p className="summary">{m.snippet}</p>}
+            <AccountTag accounts={accounts} id={m.accountId} />
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+export function useNow(everyMs: number): Date {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), everyMs)
+    return () => clearInterval(t)
+  }, [everyMs])
+  return now
+}
+
+const clock = (iso: string): string => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+
+function dayLabel(iso: string, now: Date): string {
+  const d = new Date(iso)
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })
+}
+
+const when = (e: CalendarEvent): string => (e.allDay ? 'All day' : `${clock(e.start)} – ${clock(e.end)}`)
+
+function JoinButton({ e }: { e: CalendarEvent }): React.JSX.Element | null {
+  if (!e.joinUrl) return null
+  return (
+    <button className="primary join" onClick={() => void window.hub.openExternal(e.joinUrl!)}>
+      Join
+    </button>
+  )
+}
+
+function countdownText(phase: ReturnType<typeof meetingPhase>): string {
+  if (phase.phase === 'now') return phase.minutes > 0 ? `${phase.minutes} min left` : 'Ending'
+  if (phase.minutes < 60) return `in ${phase.minutes} min`
+  const h = Math.floor(phase.minutes / 60)
+  const m = phase.minutes % 60
+  return h < 24 ? `in ${h} h${m ? ` ${m} min` : ''}` : `in ${Math.round(h / 24)} d`
+}
+
+/**
+ * The next timed meeting with a countdown ring that fills over the last hour, pulses in the
+ * last 10 minutes, and turns into a progress ring while the meeting runs.
+ */
+export function NextMeeting({ e, now, accounts }: { e: CalendarEvent; now: Date; accounts: Account[] }): React.JSX.Element {
+  const p = meetingPhase(e, now)
+  const r = 26
+  const c = 2 * Math.PI * r
+  return (
+    <div className={`next-meeting ${p.phase}`}>
+      <svg className="ring" viewBox="0 0 64 64" aria-hidden="true">
+        <circle cx="32" cy="32" r={r} className="ring-track" />
+        <circle cx="32" cy="32" r={r} className="ring-fill" strokeDasharray={c} strokeDashoffset={c * (1 - p.progress)} />
+      </svg>
+      <div className="next-text">
+        <span className="countdown" role="timer">
+          {countdownText(p)}
+        </span>
+        <span className="next-title">{e.title}</span>
+        <span className="muted small">
+          {dayLabel(e.start, now) === 'Today' ? '' : `${dayLabel(e.start, now)}, `}
+          {when(e)}
+          {e.location ? ` · ${e.location}` : ''}
+        </span>
+        <AccountTag accounts={accounts} id={e.accountId} />
+      </div>
+      <JoinButton e={e} />
+    </div>
+  )
+}
+
+/** Events grouped by day. */
+export function EventList({ events, accounts, now, limit }: { events: CalendarEvent[]; accounts: Account[]; now: Date; limit?: number }): React.JSX.Element {
+  const shown = limit ? events.slice(0, limit) : events
+  const days: [string, CalendarEvent[]][] = []
+  for (const e of shown) {
+    const label = dayLabel(e.allDay || e.start > now.toISOString() ? e.start : now.toISOString(), now)
+    const last = days[days.length - 1]
+    if (last && last[0] === label) last[1].push(e)
+    else days.push([label, [e]])
+  }
+  return (
+    <div className="events">
+      {days.map(([label, list]) => (
+        <section key={label}>
+          <h3 className="day">{label}</h3>
+          <ol>
+            {list.map((e) => {
+              const live = !e.allDay && meetingPhase(e, now).phase === 'now'
+              return (
+                <li key={`${e.accountId}:${e.id}`} className={live ? 'live-event' : ''}>
+                  <span className="event-time">{when(e)}</span>
+                  <div className="event-body">
+                    {e.webUrl ? (
+                      <button className="article-link" onClick={() => void window.hub.openExternal(e.webUrl!)}>
+                        {e.title}
+                      </button>
+                    ) : (
+                      <span>{e.title}</span>
+                    )}
+                    {e.location && <span className="muted small">{e.location}</span>}
+                    <AccountTag accounts={accounts} id={e.accountId} />
+                  </div>
+                  <JoinButton e={e} />
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ))}
+    </div>
+  )
+}
+
+/** Shown in place of mail or events until an account is connected. */
+export function ConnectPrompt({ what, onOpen }: { what: 'mail' | 'calendar'; onOpen: () => void }): React.JSX.Element {
+  return (
+    <p className="hint">
+      {what === 'mail' ? 'Connect a mail account to see your inbox here.' : 'Connect a calendar to see your day here.'}{' '}
+      <button className="link" onClick={onOpen}>
+        Add an account <Icon name="arrow" />
+      </button>
+    </p>
+  )
+}
+
+export function Problems({ problems }: { problems: string[] }): React.JSX.Element | null {
+  if (problems.length === 0) return null
+  return (
+    <ul className="problems">
+      {problems.map((p) => (
+        <li key={p} className="error small">
+          {p}
+        </li>
+      ))}
+    </ul>
+  )
+}
