@@ -1,4 +1,5 @@
 import { normalizeSite, PROJECT_WEIGHTS, type JiraSite, type ProjectWeight, type TicketRanking } from './jira'
+import { DEFAULT_FACT_CHECK, normalizeFactCheck, type FactCheckSettings } from './factcheck'
 import { LEANS, type Source } from './news'
 import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
 
@@ -25,6 +26,8 @@ export interface Settings {
   projectWeights: Record<string, ProjectWeight>
   /** 'jev' sends ticket text to TypeSafe AI for scoring; 'local' never sends anything. */
   ticketRanking: TicketRanking
+  /** Which AI checks facts. Its keys live in the OS keychain, not here. */
+  factCheck: FactCheckSettings,
   /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
   syncFolder: string
 }
@@ -41,6 +44,7 @@ export const DEFAULT_SETTINGS: Settings = {
   jiraSites: [],
   projectWeights: {},
   ticketRanking: 'local',
+  factCheck: DEFAULT_FACT_CHECK,
   syncFolder: ''
 }
 
@@ -99,6 +103,7 @@ export function normalizeSettings(raw: unknown): Settings {
       )
     ) as Record<string, ProjectWeight>,
     ticketRanking: r.ticketRanking === 'jev' ? 'jev' : 'local',
+    factCheck: normalizeFactCheck(r.factCheck),
     // Only absolute paths (macOS/Linux or a Windows drive).
     syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''
   }

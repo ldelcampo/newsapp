@@ -2,6 +2,10 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, safeStorage, shell } from 'electron'
+import { makeProvider } from './ai-providers'
+import { FactCheckService } from './fact-check-service'
+import { SecretStore } from './secret-store'
+import { PROVIDERS as AI_PROVIDERS, SECRET_NAMES, SYSTEM_PROMPT, type ProviderId, type SecretName } from '../shared/factcheck'
 import { PROVIDERS, type Provider } from '../shared/accounts'
 import { GoogleConnector } from './accounts/google'
 import { googleClient } from './accounts/google-client'
@@ -18,13 +22,15 @@ import { normalizeSettings } from '../shared/settings'
 import { cleanSiteUrl, siteKind, type JiraSite } from '../shared/jira'
 import { newWidget, normalizeWidget } from '../shared/widgets'
 import { JEV_SECRET, JiraService, jiraSecret } from './jira-service'
-import { SecretStore } from './secrets'
+import { SecretStore as TokenStore } from './secrets'
 import { WidgetService } from './widget-service'
 
 let store: SettingsStore
 let news: NewsService
 let secrets: SecretStore
+let tokens: TokenStore
 let jira: JiraService
+let factCheck: FactCheckService
 let sync: SettingsSync
 let accounts: AccountService
 const widgets = new WidgetService()
@@ -63,14 +69,16 @@ function createWindow(): void {
 app.whenReady().then(() => {
   store = new SettingsStore(app.getPath('userData'))
   news = new NewsService(app.getPath('userData'))
+  secrets = new SecretStore(app.getPath('userData'), safeStorage)
+  factCheck = new FactCheckService(app.getPath('userData'))
   nativeTheme.themeSource = store.load().theme
   // Only for automated tests on Linux machines without a keyring.
   if (process.env.HUB_E2E_PLAINTEXT_SECRETS === '1' && process.platform === 'linux') safeStorage.setUsePlainTextEncryption(true)
-  secrets = new SecretStore(app.getPath('userData'), {
+  tokens = new TokenStore(app.getPath('userData'), {
     encrypt: (v) => safeStorage.encryptString(v),
     decrypt: (b) => safeStorage.decryptString(b)
   })
-  jira = new JiraService(app.getPath('userData'), secrets)
+  jira = new JiraService(app.getPath('userData'), tokens)
   sync = new SettingsSync(store, app.getPath('userData'), (s) => {
     nativeTheme.themeSource = s.theme
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send('settings:changed', s)
@@ -95,6 +103,53 @@ app.whenReady().then(() => {
   }
   void connect()
 
+  const providerFor = (id: ProviderId): ReturnType<typeof makeProvider> => {
+    const fc = store.load().factCheck
+    return makeProvider(id, fc.models[id], id === 'ollama' ? null : secrets.get(id), fc.ollamaUrl)
+  }
+  // One check per story at a time, so a double click doesn't pay twice.
+  const running = new Map<string, Promise<unknown>>()
+  ipcMain.handle('factcheck:run', async (e, articleId: unknown) => {
+    if (typeof articleId !== 'string') throw new Error('No story given.')
+    const pending = running.get(articleId)
+    if (pending) return pending
+    if (news.lastArticles.length === 0) await news.load(store.load())
+    const article = news.lastArticles.find((a) => a.id === articleId)
+    if (!article) throw new Error('That story is no longer loaded. Refresh the news and try again.')
+    const settings = store.load().factCheck
+    const job = factCheck
+      .run({
+        article,
+        pool: news.lastArticles,
+        settings,
+        provider: providerFor(settings.provider),
+        googleKey: secrets.get('googleFactCheck'),
+        onStep: (step) => {
+          if (!e.sender.isDestroyed()) e.sender.send('factcheck:step', articleId, step)
+        }
+      })
+      .finally(() => running.delete(articleId))
+    running.set(articleId, job)
+    return job
+  })
+  ipcMain.handle('factcheck:saved', (_e, articleId: unknown) => (typeof articleId === 'string' ? factCheck.saved(articleId) : null))
+  ipcMain.handle('factcheck:test', async (_e, id: unknown) => {
+    if (!AI_PROVIDERS.some((p) => p.id === id)) return { ok: false, error: 'Unknown provider.' }
+    const provider = providerFor(id as ProviderId)
+    if (!provider) return { ok: false, error: 'Save a key for this provider first.' }
+    try {
+      await provider.ask({ system: SYSTEM_PROMPT, prompt: 'Reply with {"ok":true}' })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+  ipcMain.handle('secrets:list', () => secrets.which())
+  ipcMain.handle('secrets:set', (_e, name: unknown, value: unknown) => {
+    if (!SECRET_NAMES.includes(name as SecretName) || typeof value !== 'string' || value.length > 500) throw new Error('That key could not be saved.')
+    secrets.set(name as SecretName, value)
+    return secrets.which()
+  })
   // Sign-ins are encrypted with the OS keychain; without one, nothing secret is written.
   const cipher: Cipher = {
     encrypt: (plain) => {
@@ -181,7 +236,7 @@ app.whenReady().then(() => {
       const current = store.load()
       const existing = current.jiraSites.find((x) => x.url === url && x.email === email)
       const site: JiraSite = { id: existing?.id ?? `jira-${Date.now().toString(36)}`, url, kind, email, name }
-      secrets.set(jiraSecret(site.id), token)
+      tokens.set(jiraSecret(site.id), token)
       jira.forget(site.id)
       // The first connection puts "Needs you today" on the dashboard if it isn't there.
       const dashboard = current.dashboard.some((w) => w.type === 'tickets') ? current.dashboard : [newWidget('tickets', 'tickets'), ...current.dashboard]
@@ -193,16 +248,16 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('jira:disconnect', (_e, id: unknown) => {
     const current = store.load()
-    secrets.set(jiraSecret(String(id)), null)
+    tokens.set(jiraSecret(String(id)), null)
     jira.forget(String(id))
     return sync.save({ ...current, jiraSites: current.jiraSites.filter((x) => x.id !== id) })
   })
   ipcMain.handle('jira:tickets', (_e, force: unknown) => jira.load(store.load(), force === true))
-  ipcMain.handle('jev:has-key', () => secrets.has(JEV_SECRET))
+  ipcMain.handle('jev:has-key', () => tokens.has(JEV_SECRET))
   ipcMain.handle('jev:set-key', (_e, key: unknown) => {
     const k = typeof key === 'string' ? key.trim() : ''
-    secrets.set(JEV_SECRET, k.length >= 10 ? k : null)
-    return secrets.has(JEV_SECRET)
+    tokens.set(JEV_SECRET, k.length >= 10 ? k : null)
+    return tokens.has(JEV_SECRET)
   })
   const provider = (p: unknown): Provider => {
     const found = PROVIDERS.find((x) => x.provider === p)

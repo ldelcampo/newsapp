@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { HubApi, UpdateState } from '../shared/api'
+import type { FactCheckStep } from '../shared/factcheck'
 import type { Settings } from '../shared/settings'
 
 const api: HubApi = {
@@ -45,7 +46,17 @@ const api: HubApi = {
     const listener = (_e: Electron.IpcRendererEvent, state: UpdateState): void => cb(state)
     ipcRenderer.on('update:state', listener)
     return () => ipcRenderer.removeListener('update:state', listener)
-  }
+  },
+  verifyArticle: (articleId) => ipcRenderer.invoke('factcheck:run', articleId),
+  savedReport: (articleId) => ipcRenderer.invoke('factcheck:saved', articleId),
+  onVerifyStep: (cb) => {
+    const listener = (_e: Electron.IpcRendererEvent, articleId: string, step: FactCheckStep): void => cb(articleId, step)
+    ipcRenderer.on('factcheck:step', listener)
+    return () => ipcRenderer.removeListener('factcheck:step', listener)
+  },
+  secrets: () => ipcRenderer.invoke('secrets:list'),
+  setSecret: (name, value) => ipcRenderer.invoke('secrets:set', name, value),
+  testProvider: (provider) => ipcRenderer.invoke('factcheck:test', provider)
 }
 
 contextBridge.exposeInMainWorld('hub', api)
