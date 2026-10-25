@@ -1,7 +1,7 @@
 import type { TicketResult } from './jira'
 import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
-import type { Account, CalendarEvent, ConnectionTest, MailAction, MailBody, Provider } from './accounts'
-import type { MailResult, SnoozeOption, Verdict } from './mail'
+import type { Account, CalendarEvent, ConnectionTest, MailAction, MailBody, MailDraft, Provider } from './accounts'
+import type { MailResult, MailSummary, ReplyIdea, SnoozeOption, Verdict } from './mail'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -114,6 +114,18 @@ export interface HubApi {
   mailAct(ids: string[], action: MailAction): Promise<void>
   /** Hides a message until later; null brings it back now. Returns when it comes back. */
   mailSnooze(id: string, option: SnoozeOption | null): Promise<string | null>
+  /** Sends new mail or a reply (Gmail through the API, other accounts through SMTP with a copy in Sent). */
+  mailSend(draft: MailDraft): Promise<void>
+  /** To, Cc and subject for a reply; `all` keeps the Cc list. */
+  mailReplyDraft(accountId: string, id: string, all: boolean): Promise<Omit<MailDraft, 'text'>>
+  /** Three short replies from the AI chosen under Fact checking. Sends this message to it. */
+  mailReplyIdeas(accountId: string, id: string): Promise<{ ideas: ReplyIdea[]; draft: Omit<MailDraft, 'text'> }>
+  /** A short summary from the AI chosen under Fact checking. Sends this message to it. */
+  mailSummary(accountId: string, id: string): Promise<MailSummary>
+  /** Unsubscribes in one step when the sender allows it; otherwise returns the page to open. */
+  mailUnsubscribe(accountId: string, id: string): Promise<{ done: true; how: string } | { open: string }>
+  /** Creates a Jira task from a message, assigned to the user. */
+  mailTask(accountId: string, id: string, task: { siteId: string; projectKey: string; summary: string }): Promise<{ key: string; url: string }>
   /** How many senders the ranking has learned about. */
   mailLearned(): Promise<number>
   /** Forgets everything the user taught the mail ranking. */

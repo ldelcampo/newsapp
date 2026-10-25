@@ -4,6 +4,7 @@ import { byDate, SNOOZE_OPTIONS, type MailUrgency, type RankedMail, type SnoozeO
 import { ArticleSkeleton } from './ArticleList'
 import { Icon } from './Icon'
 import { AccountTag, ConnectPrompt, MailList, Problems, VerdictButtons } from './Inbox'
+import { Composer, ReaderTools } from './MailCompose'
 import { errorText, useAccounts, useMail } from './useAccounts'
 import { timeAgo } from './useNews'
 
@@ -23,6 +24,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const [openId, setOpenId] = useState('')
   const [overrides, setOverrides] = useState<Record<string, Override>>({})
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
+  const [composing, setComposing] = useState(false)
 
   const withMail = accounts?.filter((a) => a.mail) ?? []
   const apply = (m: RankedMail): RankedMail & { gone?: boolean } => {
@@ -79,6 +81,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
       .catch(() => undo(m.id, ['verdict']))
   }
   const select = (m: RankedMail): void => {
+    setComposing(false)
     setOpenId(m.id)
     // Opening a message reads it, as in any mail app; read-only accounts just skip this.
     if (m.unread && !feed?.readOnly.includes(m.accountId)) act(m, 'read', true)
@@ -98,7 +101,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return
       if (e.key === 'e') act(open, 'archive')
       else if (e.key === '#') act(open, 'trash')
       else if (e.key === 's') act(open, open.starred ? 'unstar' : 'star')
@@ -125,13 +128,16 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const status = loading ? 'Updating…' : feed ? `Updated ${timeAgo(feed.fetchedAt)} · ${feed.ranking === 'jev' ? 'ranked with Jev' : 'built-in ranking'}` : ''
 
   return (
-    <div className={`mail-view ${open ? 'reading' : ''}`}>
+    <div className={`mail-view ${open || composing ? 'reading' : ''}`}>
       <div className="toolbar enter">
         <div className="news-status">
           <span className="status">{status}</span>
           <button className="ghost" onClick={() => reload(true)} disabled={loading}>
             <Icon name="refresh" className={loading ? 'spin' : ''} />
             Refresh
+          </button>
+          <button className="primary" onClick={() => (setOpenId(''), setComposing(true))}>
+            <Icon name="edit" /> Write
           </button>
         </div>
         <div className="chips" role="tablist" aria-label="Which mail">
@@ -199,7 +205,32 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
           {feed && tab === 'snoozed' && (snoozed.length ? list(snoozed) : <p className="muted">Nothing is snoozed.</p>)}
           {feed && <Problems problems={feed.problems} />}
         </section>
-        {open && <Reader m={open} accounts={withMail} onClose={() => setOpenId('')} onVerdict={verdict} actions={actions(open)} />}
+        {open && (
+          <Reader
+            m={open}
+            accounts={withMail}
+            onClose={() => setOpenId('')}
+            onVerdict={verdict}
+            actions={actions(open)}
+            tools={<ReaderTools m={open} accounts={withMail} readOnly={!!feed?.readOnly.includes(open.accountId)} onDone={say} />}
+          />
+        )}
+        {composing && !open && (
+          <section className="card enter reader" aria-label="New message">
+            <header className="reader-actions">
+              <h2 className="grow">New message</h2>
+              <button className="ghost icon-only" onClick={() => setComposing(false)} aria-label="Close">
+                <Icon name="close" />
+              </button>
+            </header>
+            <Composer
+              initial={{ accountId: withMail.find((a) => !feed?.readOnly.includes(a.id))?.id ?? withMail[0]?.id ?? '', to: '', cc: '', subject: '', text: '' }}
+              accounts={withMail.filter((a) => !feed?.readOnly.includes(a.id))}
+              onClose={() => setComposing(false)}
+              onSent={(t) => (setComposing(false), say(t))}
+            />
+          </section>
+        )}
       </div>
     </div>
   )
@@ -251,13 +282,15 @@ function Reader({
   accounts,
   onClose,
   onVerdict,
-  actions
+  actions,
+  tools
 }: {
   m: RankedMail
   accounts: Account[]
   onClose: () => void
   onVerdict: (m: RankedMail, v: Verdict | null) => void
   actions: React.ReactNode
+  tools: React.ReactNode
 }): React.JSX.Element {
   const [body, setBody] = useState<MailBody | null>(null)
   const [error, setError] = useState('')
@@ -306,6 +339,7 @@ function Reader({
           </div>
         )}
       </header>
+      {tools}
       {error && <p className="error small">Couldn’t open this message: {error}</p>}
       {!body && !error && <ArticleSkeleton rows={4} />}
       {body && remote && !images && (

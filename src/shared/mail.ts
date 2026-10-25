@@ -278,3 +278,92 @@ export function parseJevMail(json: unknown): MailSignal {
     confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5
   }
 }
+
+// ---------- AI help: quick replies and summaries (the user's own AI provider, per click) ----------
+
+export const MAIL_AI_SYSTEM =
+  'You help a busy professional handle email. You write in the language of the email you are given, you never invent facts, ' +
+  'dates or commitments the user did not state, and you always answer with one JSON object and nothing else.'
+
+export interface ReplyIdea {
+  /** Two to four words, e.g. "Yes, approved". */
+  label: string
+  text: string
+}
+
+export interface MailSummary {
+  summary: string
+  /** What the email asks the user to do, if anything. */
+  asks: string[]
+  /** Dates or deadlines mentioned, as written. */
+  dates: string[]
+}
+
+const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max)}\n[…cut]` : s)
+
+export function replyPrompt(email: { from: string; subject: string; text: string }, me: string): string {
+  return [
+    `The user is ${me}. Suggest three short, different replies they might send to this email: for example one that agrees, one that asks for something or more time, and one that declines or redirects, whichever fit.`,
+    'Each reply is two to four sentences, polite and direct, ready to send, signed with nothing (the app adds no signature).',
+    'Answer as JSON: {"replies":[{"label":"Yes, approved","text":"..."}]}',
+    '',
+    `From: ${email.from}`,
+    `Subject: ${email.subject}`,
+    '',
+    clip(email.text, 12_000)
+  ].join('\n')
+}
+
+export function summaryPrompt(email: { from: string; subject: string; text: string }): string {
+  return [
+    'Summarise this email, including any earlier messages quoted in it, in at most three sentences.',
+    'Then list what it asks the reader to do, and any dates or deadlines mentioned, exactly as written. Use empty lists when there are none.',
+    'Answer as JSON: {"summary":"...","asks":["..."],"dates":["..."]}',
+    '',
+    `From: ${email.from}`,
+    `Subject: ${email.subject}`,
+    '',
+    clip(email.text, 30_000)
+  ].join('\n')
+}
+
+const strings = (v: unknown, max: number): string[] =>
+  (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === 'string' && x.trim() !== '').map((x) => x.trim()).slice(0, max)
+
+export function parseReplies(json: unknown): ReplyIdea[] {
+  const list = (json as { replies?: unknown })?.replies
+  return (Array.isArray(list) ? list : [])
+    .map((r) => (r && typeof r === 'object' ? (r as Record<string, unknown>) : {}))
+    .filter((r) => typeof r.text === 'string' && r.text.trim())
+    .map((r) => ({ label: typeof r.label === 'string' && r.label.trim() ? r.label.trim().slice(0, 40) : 'Reply', text: String(r.text).trim() }))
+    .slice(0, 4)
+}
+
+export function parseSummary(json: unknown): MailSummary {
+  const j = (json && typeof json === 'object' ? json : {}) as Record<string, unknown>
+  if (typeof j.summary !== 'string' || !j.summary.trim()) throw new Error('The AI answer had no summary in it.')
+  return { summary: j.summary.trim(), asks: strings(j.asks, 6), dates: strings(j.dates, 6) }
+}
+
+// ---------- Unsubscribe ----------
+
+export type UnsubscribeMethod =
+  /** RFC 8058: a POST to the link unsubscribes with no page to visit. */
+  | { kind: 'one-click'; url: string }
+  | { kind: 'link'; url: string }
+  | { kind: 'mail'; to: string; subject: string; body: string }
+
+/** The best way to unsubscribe from List-Unsubscribe (and List-Unsubscribe-Post), or null. */
+export function unsubscribeMethod(header: string, post = ''): UnsubscribeMethod | null {
+  const links = [...header.matchAll(/<([^>]+)>/g)].map((m) => m[1].trim())
+  const https = links.find((l) => /^https:\/\//i.test(l))
+  if (https && /List-Unsubscribe\s*=\s*One-Click/i.test(post)) return { kind: 'one-click', url: https }
+  const mailto = links.find((l) => /^mailto:/i.test(l))
+  if (mailto) {
+    const [addr, query = ''] = mailto.slice(7).split('?')
+    const q = new URLSearchParams(query)
+    const to = decodeURIComponent(addr)
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { kind: 'mail', to, subject: q.get('subject') || 'unsubscribe', body: q.get('body') || 'unsubscribe' }
+  }
+  return https ? { kind: 'link', url: https } : null
+}

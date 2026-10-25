@@ -156,7 +156,7 @@ describe('Gmail actions', () => {
   }
 
   it('archives, stars and trashes with the modify scope', async () => {
-    const { google, sent } = setup(`openid ${SCOPES.mail}`)
+    const { google, sent } = setup(`openid ${SCOPES.mail} ${SCOPES.send}`)
     expect(google.canChange(account)).toBe(true)
     await google.act(account, ['google:42/m1', 'google:42/m2'], 'archive')
     await google.act(account, ['google:42/m1'], 'star')
@@ -176,7 +176,7 @@ describe('Gmail actions', () => {
   })
 
   it('updates the cached inbox after an action', async () => {
-    const { google } = setup(`openid ${SCOPES.mail}`)
+    const { google } = setup(`openid ${SCOPES.mail} ${SCOPES.send}`)
     const store = (google as unknown as { deps: { store: AccountStore } }).deps.store
     const items = [
       { id: 'google:42/m1', accountId: account.id, from: { name: '', email: 'a@b.c' }, subject: 's', snippet: '', receivedAt: '2026-10-24T00:00:00.000Z', unread: true },

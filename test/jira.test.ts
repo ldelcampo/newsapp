@@ -236,3 +236,44 @@ describe('jira service', () => {
     })
   })
 })
+
+describe('making a task from mail', () => {
+  const setup = (o: { assignFails?: boolean; types?: unknown } = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-jira-'))
+    const secrets = new SecretStore(dir, { encrypt: (s) => Buffer.from(s), decrypt: (b) => b.toString() })
+    secrets.set(jiraSecret(site.id), 'tok-1234567890')
+    const posted: Record<string, any>[] = []
+    const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
+      if (url.endsWith('/issue/createmeta/OPS/issuetypes')) return new Response(JSON.stringify(o.types ?? { issueTypes: [{ id: '5', name: 'Sub-task', subtask: true }, { id: '10', name: 'Bug' }, { id: '11', name: 'Task' }] }))
+      if (url.endsWith('/myself')) return new Response(JSON.stringify({ accountId: 'acc-1' }))
+      if (url.endsWith('/rest/api/3/issue') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body))
+        posted.push(body)
+        if (o.assignFails && body.fields.assignee) return new Response('{}', { status: 400 })
+        return new Response(JSON.stringify({ key: 'OPS-7' }), { status: 201 })
+      }
+      return new Response('{}', { status: 404 })
+    }
+    return { svc: new JiraService(dir, secrets, fetchFn, () => now), posted }
+  }
+  const settings = normalizeSettings({ jiraSites: [site] })
+
+  it('creates a Task assigned to the user, with the email as the description', async () => {
+    const { svc, posted } = setup()
+    expect(await svc.createTask(settings, 's1', 'OPS', 'Approve budget', 'From Ana\n\nPlease approve')).toEqual({ key: 'OPS-7', url: 'https://acme.atlassian.net/browse/OPS-7' })
+    expect(posted[0].fields).toMatchObject({ project: { key: 'OPS' }, issuetype: { id: '11' }, summary: 'Approve budget', assignee: { accountId: 'acc-1' } })
+    expect(posted[0].fields.description.content).toHaveLength(2)
+  })
+
+  it('creates it unassigned when the project refuses assignees, and falls back to the first type', async () => {
+    const { svc, posted } = setup({ assignFails: true, types: { values: [{ id: '10', name: 'Story' }] } })
+    expect((await svc.createTask(settings, 's1', 'OPS', 'x', 'y')).key).toBe('OPS-7')
+    expect(posted.map((p) => !!p.fields.assignee)).toEqual([true, false])
+    expect(posted[1].fields.issuetype).toEqual({ id: '10' })
+  })
+
+  it('explains a project that doesn’t exist', async () => {
+    const { svc } = setup()
+    await expect(svc.createTask(settings, 's1', 'NOPE', 'x', 'y')).rejects.toThrow(/no project NOPE/)
+  })
+})

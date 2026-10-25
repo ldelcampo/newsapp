@@ -71,7 +71,56 @@ export interface MailBody {
   text: string
   /** File names of attachments. */
   attachments: string[]
+  /** For replies: the Message-ID, References and Reply-To headers, and the provider's thread. */
+  messageId?: string
+  references?: string
+  replyTo?: string
+  threadId?: string
+  /** List-Unsubscribe and List-Unsubscribe-Post, for unsubscribing. */
+  unsubscribe?: string
+  unsubscribePost?: string
 }
+
+/** Mail the user writes in the app: new, or a reply to `replyTo` (a message id from the inbox). */
+export interface MailDraft {
+  accountId: string
+  to: string
+  cc: string
+  subject: string
+  text: string
+  replyTo?: string
+}
+
+/** What a connector sends: a draft with the reply headers filled in. */
+export interface OutgoingMail {
+  to: string
+  cc: string
+  subject: string
+  text: string
+  inReplyTo?: string
+  references?: string
+  threadId?: string
+}
+
+const EMAIL_LIST = /^\s*([^,;\s]+@[^,;\s]+\.[^,;\s]+|[^<>,]*<[^<>\s@]+@[^<>\s]+\.[^<>\s]+>)(\s*[,;]\s*([^,;\s]+@[^,;\s]+\.[^,;\s]+|[^<>,]*<[^<>\s@]+@[^<>\s]+\.[^<>\s]+>))*\s*$/
+
+/** Checks a draft from the window; returns a message for the first problem, or the clean draft. */
+export function normalizeDraft(raw: unknown): MailDraft | string {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const s = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
+  const to = s(r.to, 2000).trim()
+  const cc = s(r.cc, 2000).trim()
+  if (!s(r.accountId, 200)) return 'Choose the account to send from.'
+  if (!EMAIL_LIST.test(to)) return 'Enter at least one valid address in To.'
+  if (cc && !EMAIL_LIST.test(cc)) return 'Check the addresses in Cc.'
+  const text = s(r.text, 200_000)
+  if (!text.trim()) return 'Write something first.'
+  const replyTo = s(r.replyTo, 500)
+  return { accountId: s(r.accountId, 200), to, cc, subject: s(r.subject, 500).replace(/[\r\n]+/g, ' ').trim(), text, ...(replyTo ? { replyTo } : {}) }
+}
+
+/** "Re: subject" once, whatever language prefix was there. */
+export const replySubject = (subject: string): string => (/^\s*(re|aw|rv|sv)\s*:/i.test(subject) ? subject : `Re: ${subject}`)
 
 export interface CalendarEvent {
   id: string

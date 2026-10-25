@@ -12,9 +12,11 @@ import {
   type ImapSettings,
   type MailAction,
   type MailBody,
-  type MailMessage
+  type MailMessage,
+  type OutgoingMail
 } from '../../shared/accounts'
 import { parseIcal } from '../../shared/ical'
+import { mailOptions, rawMessage } from './compose'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountStore } from './store'
 
@@ -219,17 +221,18 @@ function toMessage(acc: Account, m: FetchMessageObject, snippet: string): MailMe
 }
 
 const FOLDER_NAMES = {
+  sent: ['sent', 'sent items', 'sent messages', 'sent mail', 'enviados', 'elementos enviados', '[gmail]/sent mail'],
   archive: ['archive', 'archives', 'archivo', 'archivados', 'all mail', '[gmail]/all mail'],
   trash: ['trash', 'deleted items', 'deleted messages', 'papelera', 'elementos eliminados', 'bin']
 }
 
 /** The archive or trash folder: the one marked with that special use, else a usual name. Creates "Archive" when none exists. */
-export async function specialFolder(client: Pick<ImapFlow, 'list' | 'mailboxCreate'>, kind: 'archive' | 'trash'): Promise<string> {
+export async function specialFolder(client: Pick<ImapFlow, 'list' | 'mailboxCreate'>, kind: 'archive' | 'trash' | 'sent'): Promise<string> {
   const boxes = await client.list()
-  const use = kind === 'archive' ? '\\Archive' : '\\Trash'
+  const use = { archive: '\\Archive', trash: '\\Trash', sent: '\\Sent' }[kind]
   const found = boxes.find((b) => b.specialUse === use) ?? boxes.find((b) => FOLDER_NAMES[kind].includes(b.path.toLowerCase()) || FOLDER_NAMES[kind].includes(b.name.toLowerCase()))
   if (found) return found.path
-  if (kind === 'trash') throw new Error('This mailbox has no Trash folder.')
+  if (kind !== 'archive') throw new Error(`This mailbox has no ${kind === 'trash' ? 'Trash' : 'Sent'} folder.`)
   await client.mailboxCreate('Archive')
   return 'Archive'
 }
@@ -297,9 +300,14 @@ export class ImapConnector implements Connector {
     try {
       const lock = await client.getMailboxLock('INBOX', { readOnly: true })
       try {
-        const m = await client.fetchOne(uid, { uid: true, envelope: true, internalDate: true, bodyStructure: true }, { uid: true })
+        const m = await client.fetchOne(
+          uid,
+          { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ['references', 'list-unsubscribe', 'list-unsubscribe-post'] },
+          { uid: true }
+        )
         if (!m) throw new Error('That message is no longer in the inbox.')
         const parts = bodyParts(m.bodyStructure)
+        const h = parseHeaderLines(m.headers)
         const read = async (part?: string): Promise<string> => {
           if (!part) return ''
           const dl = await client.download(uid, part, { uid: true, maxBytes: 2_000_000 })
@@ -319,11 +327,51 @@ export class ImapConnector implements Connector {
           receivedAt: (date ? new Date(date) : new Date()).toISOString(),
           html,
           text: text || (html ? toSnippet(html, true, 100_000) : ''),
-          attachments: parts.attachments
+          attachments: parts.attachments,
+          messageId: m.envelope?.messageId ?? '',
+          references: h.references ?? '',
+          replyTo: addresses(m.envelope?.replyTo),
+          unsubscribe: h['list-unsubscribe'] ?? '',
+          unsubscribePost: h['list-unsubscribe-post'] ?? ''
         }
       } finally {
         lock.release()
       }
+    } finally {
+      await client.logout().catch(() => client.close())
+    }
+  }
+
+  /** Sends over SMTP, then files a copy in Sent, which SMTP servers don't do themselves. */
+  async send(acc: Account, mail: OutgoingMail): Promise<void> {
+    if (!acc.imap) throw new Error('This account has no mail server.')
+    const s = acc.imap
+    const pass = this.password(acc)
+    const smtp = createTransport({
+      host: s.smtpHost,
+      port: s.smtpPort,
+      secure: s.smtpPort === 465,
+      requireTLS: s.smtpPort !== 465,
+      auth: { user: s.user, pass },
+      connectionTimeout: TIMEOUT,
+      greetingTimeout: TIMEOUT
+    })
+    try {
+      await smtp.sendMail(mailOptions(acc, mail))
+    } catch (e) {
+      if (isAuthError(e)) throw new AuthExpiredError(explain(e, s.smtpHost))
+      throw new Error(explain(e, s.smtpHost))
+    } finally {
+      smtp.close()
+    }
+    // The mail is out; a missing copy in Sent isn't worth an error.
+    const client = await this.connect(acc as Account & { imap: ImapSettings }).catch(() => null)
+    if (!client) return
+    try {
+      const sent = await specialFolder(client, 'sent')
+      await client.append(sent, await rawMessage(acc, mail), ['\\Seen'])
+    } catch {
+      // No Sent folder, or the server refused the copy.
     } finally {
       await client.logout().catch(() => client.close())
     }

@@ -1,4 +1,4 @@
-import type { Account, CalendarEvent, MailAction, MailBody, MailMessage, Provider } from '../../shared/accounts'
+import type { Account, CalendarEvent, MailAction, MailBody, MailMessage, OutgoingMail, Provider } from '../../shared/accounts'
 
 /** One mail/calendar provider. The service calls only the accounts whose switches are on. */
 export interface Connector {
@@ -16,6 +16,8 @@ export interface Connector {
   act?(account: Account, ids: string[], action: MailAction): Promise<void>
   /** False when the saved sign-in can only read mail, so actions need a reconnect first. */
   canChange?(account: Account): boolean
+  /** Sends mail from this account (and keeps a copy in Sent where the provider doesn't). */
+  send?(account: Account, mail: OutgoingMail): Promise<void>
   events(account: Account, fromISO: string, toISO: string): Promise<CalendarEvent[]>
 }
 

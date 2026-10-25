@@ -2,13 +2,16 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { addressedIn, isBulk, type Account, type MailMessage } from '../src/shared/accounts'
-import { applySnooze, applyVerdict, EMPTY_PREFS, snoozeUntil, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
+import { addressedIn, isBulk, normalizeDraft, replySubject, type Account, type MailBody, type MailMessage } from '../src/shared/accounts'
+import { applySnooze, applyVerdict, EMPTY_PREFS, parseReplies, parseSummary, snoozeUntil, unsubscribeMethod, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
-import { parseGmailBody, parseGmailMessage } from '../src/main/accounts/google'
+import { GoogleConnector, parseGmailBody, parseGmailMessage } from '../src/main/accounts/google'
+import { SCOPES } from '../src/main/accounts/google-oauth'
+import { rawMessage } from '../src/main/accounts/compose'
+import { AccountStore } from '../src/main/accounts/store'
 import { bodyParts, parseHeaderLines } from '../src/main/accounts/imap'
 import { JEV_URL } from '../src/main/jev'
-import { MailService } from '../src/main/mail-service'
+import { MailService, taskDescription } from '../src/main/mail-service'
 import { SecretStore } from '../src/main/secrets'
 import type { AccountService } from '../src/main/accounts/service'
 
@@ -278,5 +281,110 @@ describe('MailService actions', () => {
     service.snooze('a1', null)
     expect((await service.load(DEFAULT_SETTINGS)).snoozed).toEqual([])
     await expect(service.act(['gone'], 'read')).rejects.toThrow(/no longer loaded/)
+  })
+})
+
+describe('writing mail', () => {
+  it('checks drafts', () => {
+    expect(normalizeDraft({ accountId: 'a', to: 'ana@x.com, "Bob" <bob@y.org>', cc: '', subject: 'Hi\nthere', text: 'Hola' })).toEqual({ accountId: 'a', to: 'ana@x.com, "Bob" <bob@y.org>', cc: '', subject: 'Hi there', text: 'Hola' })
+    expect(normalizeDraft({ accountId: 'a', to: 'nope', text: 'x' })).toMatch(/valid address/)
+    expect(normalizeDraft({ accountId: 'a', to: 'a@b.co', text: ' ' })).toMatch(/Write something/)
+    expect(replySubject('Budget')).toBe('Re: Budget')
+    expect(replySubject('RE: Budget')).toBe('RE: Budget')
+  })
+
+  it('builds a reply with threading headers', async () => {
+    const raw = (await rawMessage(account, { to: 'ana@x.com', cc: '', subject: 'Re: Budget', text: 'Sí', inReplyTo: '<m2@x.com>', references: '<m1@x.com>' })).toString()
+    expect(raw).toMatch(/^In-Reply-To: <m2@x.com>/m)
+    expect(raw).toMatch(/^References: <m1@x.com> <m2@x.com>/m)
+    expect(raw).toMatch(/^From: Luis <luis@gmail.com>/m)
+  })
+
+  it('sends through Gmail in the same thread', async () => {
+    const dir = tempDir()
+    const store = new AccountStore(dir, plain)
+    store.put(account)
+    store.setSecret(account.id, JSON.stringify({ accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 3_600_000, scope: `${SCOPES.mail} ${SCOPES.send}` }))
+    const sent: { url: string; body: any }[] = []
+    const google = new GoogleConnector({
+      store,
+      client: () => ({ clientId: 'c', clientSecret: 's' }),
+      openBrowser: () => {},
+      fetchFn: async (url, init) => (sent.push({ url, body: JSON.parse(String(init?.body)) }), new Response('{"id":"x"}'))
+    })
+    await google.send(account, { to: 'ana@x.com', cc: '', subject: 'Re: B', text: 'ok', threadId: 't1' })
+    expect(sent[0].url).toBe('https://gmail.googleapis.com/gmail/v1/users/me/messages/send')
+    expect(sent[0].body.threadId).toBe('t1')
+    expect(Buffer.from(sent[0].body.raw, 'base64url').toString()).toMatch(/Subject: Re: B/)
+  })
+})
+
+describe('AI help and unsubscribe', () => {
+  it('reads replies and summaries', () => {
+    expect(parseReplies({ replies: [{ label: 'Yes', text: 'Sí, aprobado.' }, { text: '' }, { text: 'Later' }] })).toEqual([
+      { label: 'Yes', text: 'Sí, aprobado.' },
+      { label: 'Reply', text: 'Later' }
+    ])
+    expect(parseSummary({ summary: 'Ana needs approval.', asks: ['Approve'], dates: ['5 pm'] })).toEqual({ summary: 'Ana needs approval.', asks: ['Approve'], dates: ['5 pm'] })
+    expect(() => parseSummary({})).toThrow()
+  })
+
+  it('picks the best way to unsubscribe', () => {
+    expect(unsubscribeMethod('<https://x.com/u?a=1>, <mailto:u@x.com>', 'List-Unsubscribe=One-Click')).toEqual({ kind: 'one-click', url: 'https://x.com/u?a=1' })
+    expect(unsubscribeMethod('<https://x.com/u>, <mailto:u@x.com?subject=stop>')).toEqual({ kind: 'mail', to: 'u@x.com', subject: 'stop', body: 'unsubscribe' })
+    expect(unsubscribeMethod('<https://x.com/u>')).toEqual({ kind: 'link', url: 'https://x.com/u' })
+    expect(unsubscribeMethod('<http://x.com/u>')).toBeNull()
+  })
+
+  const body = (o: Partial<MailBody> = {}): MailBody => ({
+    id: 'a:1',
+    accountId: 'a',
+    from: { name: 'Ana', email: 'ana@x.com' },
+    to: 'luis@x.com',
+    cc: '',
+    subject: 'Budget',
+    receivedAt: NOW.toISOString(),
+    html: '<p>Please <b>approve</b></p><p>Thanks</p>',
+    text: '',
+    attachments: [],
+    ...o
+  })
+
+  it('asks the user’s AI for replies with the message as text', async () => {
+    const dir = tempDir()
+    let prompt = ''
+    const ai = { ask: async (o: { prompt: string }) => ((prompt = o.prompt), { text: '```json\n{"replies":[{"label":"OK","text":"Approved."}]}\n```', searched: [] }) }
+    const accounts = { message: async () => body({ replyTo: 'ana-team@x.com' }) } as unknown as AccountService
+    const service = new MailService(dir, accounts, new SecretStore(dir, plain), fetch, () => NOW, () => ai)
+    const r = await service.replyIdeas('a', 'a:1', 'Luis')
+    expect(r.ideas).toEqual([{ label: 'OK', text: 'Approved.' }])
+    expect(r.draft).toEqual({ accountId: 'a', to: 'ana-team@x.com', cc: '', subject: 'Re: Budget', replyTo: 'a:1' })
+    expect(prompt).toContain('Please approve')
+    expect(prompt).not.toContain('<b>')
+    await expect(new MailService(dir, accounts, new SecretStore(dir, plain)).summary('a', 'a:1')).rejects.toThrow(/Fact checking/)
+  })
+
+  it('unsubscribes in one click, by email, or hands back the page', async () => {
+    const dir = tempDir()
+    const sent: unknown[] = []
+    let header = { unsubscribe: '<https://x.com/u>', unsubscribePost: 'List-Unsubscribe=One-Click' }
+    const accounts = { message: async () => body(header), send: async (d: unknown) => void sent.push(d) } as unknown as AccountService
+    const posts: string[] = []
+    const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => (posts.push(`${init?.method} ${url} ${init?.body}`), new Response('ok'))
+    const service = new MailService(dir, accounts, new SecretStore(dir, plain), fetchFn, () => NOW)
+    expect(await service.unsubscribe('a', 'a:1')).toMatchObject({ done: true })
+    expect(posts).toEqual(['POST https://x.com/u List-Unsubscribe=One-Click'])
+    header = { unsubscribe: '<mailto:leave@x.com>', unsubscribePost: '' }
+    expect(await service.unsubscribe('a', 'a:1')).toMatchObject({ done: true })
+    expect(sent).toEqual([{ accountId: 'a', to: 'leave@x.com', cc: '', subject: 'unsubscribe', text: 'unsubscribe' }])
+    header = { unsubscribe: '<https://x.com/page>', unsubscribePost: '' }
+    expect(await service.unsubscribe('a', 'a:1')).toEqual({ open: 'https://x.com/page' })
+  })
+
+  it('describes a task with the email and a link back', () => {
+    const d = taskDescription(body(), 'https://mail.google.com/x')
+    expect(d).toContain('From Ana <ana@x.com>')
+    expect(d).toContain('Please approve')
+    expect(d).toContain('Open the email: https://mail.google.com/x')
   })
 })

@@ -1,4 +1,4 @@
-import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailAction, type MailBody, type MailMessage, type Provider } from '../../shared/accounts'
+import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailAction, type MailBody, type MailDraft, type MailMessage, type Provider } from '../../shared/accounts'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountFeed } from '../../shared/api'
 import type { AccountStore } from './store'
@@ -126,6 +126,28 @@ export class AccountService {
       return [{ ...m, starred: action === 'star' }]
     })
     this.cache.set(key, { at: hit.at, value: list })
+  }
+
+  /** Sends a draft; a reply gets the original's thread and reference headers. */
+  async send(draft: MailDraft): Promise<void> {
+    const account = this.store.get(draft.accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.send) throw new Error('This account can’t send from the app yet.')
+    const original = draft.replyTo ? await this.message(account.id, draft.replyTo) : null
+    try {
+      await c.send(account, {
+        to: draft.to,
+        cc: draft.cc,
+        subject: draft.subject,
+        text: draft.text,
+        ...(original?.messageId ? { inReplyTo: original.messageId, references: original.references ?? '' } : {}),
+        ...(original?.threadId ? { threadId: original.threadId } : {})
+      })
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
   }
 
   async message(accountId: string, id: string): Promise<MailBody> {

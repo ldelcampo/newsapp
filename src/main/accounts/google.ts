@@ -1,5 +1,6 @@
-import { addressedIn, isBulk, type Account, type CalendarEvent, type MailAction, type MailBody, type MailMessage } from '../../shared/accounts'
+import { addressedIn, isBulk, type Account, type CalendarEvent, type MailAction, type MailBody, type MailMessage, type OutgoingMail } from '../../shared/accounts'
 import { USER_AGENT } from '../../shared/polite-fetch'
+import { rawMessage } from './compose'
 import { AuthExpiredError, ReadOnlyError, type Connector } from './connector'
 import {
   authUrl,
@@ -96,7 +97,13 @@ export function parseGmailBody(json: unknown, account: Account): MailBody | null
     receivedAt: new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.parse(header('date')) || 0).toISOString(),
     html,
     text,
-    attachments
+    attachments,
+    messageId: header('message-id'),
+    references: header('references'),
+    replyTo: header('reply-to'),
+    ...(typeof (j as { threadId?: unknown }).threadId === 'string' ? { threadId: (j as { threadId: string }).threadId } : {}),
+    unsubscribe: header('list-unsubscribe'),
+    unsubscribePost: header('list-unsubscribe-post')
   }
 }
 
@@ -249,8 +256,10 @@ export class GoogleConnector implements Connector {
     return { ...account, ...this.granted(signed.tokens, account), status: 'ok' }
   }
 
+  /** Changing and sending came in one permission request, so both are needed to count. */
   canChange(account: Account): boolean {
-    return !!this.tokens(account)?.scope.split(' ').includes(SCOPES.mail)
+    const scopes = this.tokens(account)?.scope.split(' ') ?? []
+    return scopes.includes(SCOPES.mail) && scopes.includes(SCOPES.send)
   }
 
   async act(account: Account, ids: string[], action: MailAction): Promise<void> {
@@ -261,6 +270,12 @@ export class GoogleConnector implements Connector {
       return
     }
     await this.api(account, `${GMAIL}/messages/batchModify`, { method: 'POST', body: { ids: gids, ...GMAIL_LABELS[action] } })
+  }
+
+  async send(account: Account, mail: OutgoingMail): Promise<void> {
+    if (!this.tokens(account)?.scope.split(' ').includes(SCOPES.send)) throw new ReadOnlyError(`${account.email} can’t send from the app yet. Reconnect it to allow sending.`)
+    const raw = (await rawMessage(account, mail)).toString('base64url')
+    await this.api(account, `${GMAIL}/messages/send`, { method: 'POST', body: { raw, ...(mail.threadId ? { threadId: mail.threadId } : {}) } })
   }
 
   async remove(account: Account): Promise<void> {
