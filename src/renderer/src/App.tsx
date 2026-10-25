@@ -77,7 +77,7 @@ export function App(): React.JSX.Element {
           </button>
         ))}
       </nav>
-      <main className="content">
+      <main className={`content ${view === 'mail' ? 'wide' : ''}`}>
         {/* The key replays the entrance animation on every view change. */}
         <div className="view" key={view === 'settings' ? view : `${view}-${revision}`}>
           <h1 className="title">{current.label}</h1>

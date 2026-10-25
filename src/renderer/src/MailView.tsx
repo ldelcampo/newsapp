@@ -174,15 +174,12 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
         </p>
       ))}
       {notice && (
-        <p className={notice.error ? 'error small' : 'ok small'} role="status">
-          {notice.text}
-          {notice.error && (
-            <button className="link" onClick={() => setNotice(null)} aria-label="Dismiss">
-              {' '}
-              <Icon name="close" />
-            </button>
-          )}
-        </p>
+        <div className={`toast ${notice.error ? 'toast-error' : ''}`} role={notice.error ? 'alert' : 'status'}>
+          <span>{notice.text}</span>
+          <button className="ghost icon-only" onClick={() => setNotice(null)} aria-label="Dismiss">
+            <Icon name="close" />
+          </button>
+        </div>
       )}
 
       <div className="mail-panes">
@@ -214,6 +211,13 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
             actions={actions(open)}
             tools={<ReaderTools m={open} accounts={withMail} readOnly={!!feed?.readOnly.includes(open.accountId)} onDone={say} />}
           />
+        )}
+        {!open && !composing && (
+          <section className="card reader reader-empty" aria-hidden="true">
+            <Icon name="mail" />
+            <p className="muted">Choose a message to read it here.</p>
+            <p className="muted small">Keys in a message: e archive · # delete · s star · u unread · Esc close</p>
+          </section>
         )}
         {composing && !open && (
           <section className="card enter reader" aria-label="New message">
