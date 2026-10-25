@@ -19,7 +19,8 @@ export function MailList({
   compact = false,
   selected,
   onSelect,
-  onVerdict
+  onVerdict,
+  actions
 }: {
   mail: RankedMail[]
   accounts: Account[]
@@ -28,6 +29,8 @@ export function MailList({
   /** Opens a message in the reader; without it, subjects open the provider's site. */
   onSelect?: (m: RankedMail) => void
   onVerdict?: (m: RankedMail, verdict: Verdict | null) => void
+  /** Buttons shown on hover, such as archive and snooze. */
+  actions?: (m: RankedMail) => React.ReactNode
 }): React.JSX.Element {
   return (
     <ol className={`mail ${compact ? 'compact' : ''}`}>
@@ -64,7 +67,12 @@ export function MailList({
               <AccountTag accounts={accounts} id={m.accountId} />
             </div>
           </div>
-          {onVerdict && <VerdictButtons m={m} onVerdict={onVerdict} />}
+          {(onVerdict || actions) && (
+            <div className="mail-side">
+              {actions?.(m)}
+              {onVerdict && <VerdictButtons m={m} onVerdict={onVerdict} />}
+            </div>
+          )}
         </li>
       ))}
     </ol>

@@ -27,7 +27,12 @@ export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
 export const SCOPES = {
   identity: ['openid', 'email', 'profile'],
-  mail: 'https://www.googleapis.com/auth/gmail.readonly',
+  /** Read, label, archive and trash; not permanent deletion. */
+  mail: 'https://www.googleapis.com/auth/gmail.modify',
+  /** For replies and new mail. */
+  send: 'https://www.googleapis.com/auth/gmail.send',
+  /** What the first builds asked for; such sign-ins can read but not change mail. */
+  mailReadOnly: 'https://www.googleapis.com/auth/gmail.readonly',
   calendar: 'https://www.googleapis.com/auth/calendar.readonly'
 }
 

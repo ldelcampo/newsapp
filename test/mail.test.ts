@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { addressedIn, isBulk, type Account, type MailMessage } from '../src/shared/accounts'
-import { applyVerdict, EMPTY_PREFS, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
+import { applySnooze, applyVerdict, EMPTY_PREFS, snoozeUntil, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
 import { parseGmailBody, parseGmailMessage } from '../src/main/accounts/google'
 import { bodyParts, parseHeaderLines } from '../src/main/accounts/imap'
@@ -135,7 +135,8 @@ describe('rankMail', () => {
   it('drops malformed saved preferences', () => {
     expect(normalizePrefs({ senders: { 'x@y.com': { important: 2 }, nope: { important: 1 } }, messages: { a: { verdict: 'maybe', at: 'x' } } })).toEqual({
       senders: { 'x@y.com': { important: 2, not: 0 } },
-      messages: {}
+      messages: {},
+      snoozed: {}
     })
   })
 
@@ -161,7 +162,12 @@ describe('Jev for mail', () => {
 })
 
 describe('MailService', () => {
-  const fakeAccounts = (items: MailMessage[]): AccountService => ({ recentMail: async () => ({ items, problems: [] }) }) as unknown as AccountService
+  const fakeAccounts = (items: MailMessage[], acted: [string, string[], string][] = []): AccountService =>
+    ({
+      recentMail: async () => ({ items, problems: [] }),
+      readOnly: () => ['ro'],
+      act: async (a: string, ids: string[], action: string) => void acted.push([a, ids, action])
+    }) as unknown as AccountService
 
   it('ranks with Jev once per message and falls back without a key', async () => {
     const dir = tempDir()
@@ -219,5 +225,58 @@ describe('MailService', () => {
     again.resetFeedback()
     expect(again.learned()).toBe(0)
     expect(() => again.feedback('missing', 'not')).toThrow(/no longer loaded/)
+  })
+})
+
+describe('snooze', () => {
+  // Wednesday 2026-10-28, 10:00 local time.
+  const wed = new Date(2026, 9, 28, 10, 0)
+  it('picks sensible times', () => {
+    expect(snoozeUntil('later', wed).getTime() - wed.getTime()).toBe(3 * 3_600_000)
+    expect(snoozeUntil('evening', wed)).toEqual(new Date(2026, 9, 28, 18, 0))
+    expect(snoozeUntil('evening', new Date(2026, 9, 28, 19, 0))).toEqual(new Date(2026, 9, 29, 18, 0))
+    expect(snoozeUntil('tomorrow', wed)).toEqual(new Date(2026, 9, 29, 8, 0))
+    expect(snoozeUntil('weekend', wed)).toEqual(new Date(2026, 9, 31, 9, 0))
+    expect(snoozeUntil('weekend', new Date(2026, 9, 31, 12, 0))).toEqual(new Date(2026, 10, 7, 9, 0))
+    expect(snoozeUntil('nextweek', wed)).toEqual(new Date(2026, 10, 2, 8, 0))
+    expect(snoozeUntil('nextweek', new Date(2026, 10, 2, 7, 0))).toEqual(new Date(2026, 10, 9, 8, 0))
+  })
+
+  it('brings mail back on top when the snooze ends', () => {
+    const prefs = applySnooze(EMPTY_PREFS, 'm', new Date(NOW.getTime() - 60_000))
+    const [m] = rankMail([msg('m', { bulk: true, unread: false })], prefs, NOW)
+    expect(m).toMatchObject({ urgency: 'now' })
+    expect(m.reasons[0]).toBe('Back from snooze')
+  })
+})
+
+describe('MailService actions', () => {
+  const fakeAccounts = (items: MailMessage[], acted: [string, string[], string][]): AccountService =>
+    ({
+      recentMail: async () => ({ items, problems: [] }),
+      readOnly: () => [],
+      act: async (a: string, ids: string[], action: string) => void acted.push([a, ids, action])
+    }) as unknown as AccountService
+
+  it('sends actions to each message’s account and hides snoozed mail', async () => {
+    const dir = tempDir()
+    const acted: [string, string[], string][] = []
+    const items = [msg('a1'), msg('a2'), msg('b1', { accountId: 'b' })]
+    const service = new MailService(dir, fakeAccounts(items, acted), new SecretStore(dir, plain), fetch, () => NOW)
+    await service.load(DEFAULT_SETTINGS)
+    await service.act(['a1', 'b1', 'a2'], 'archive')
+    expect(acted).toEqual([
+      ['a', ['a1', 'a2'], 'archive'],
+      ['b', ['b1'], 'archive']
+    ])
+    await service.load(DEFAULT_SETTINGS)
+    const at = service.snooze('a1', 'tomorrow')
+    expect(at! > NOW.toISOString()).toBe(true)
+    const r = await service.load(DEFAULT_SETTINGS)
+    expect(r.items.map((m) => m.id)).not.toContain('a1')
+    expect(r.snoozed.map((m) => m.id)).toEqual(['a1'])
+    service.snooze('a1', null)
+    expect((await service.load(DEFAULT_SETTINGS)).snoozed).toEqual([])
+    await expect(service.act(['gone'], 'read')).rejects.toThrow(/no longer loaded/)
   })
 })

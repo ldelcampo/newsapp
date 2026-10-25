@@ -13,6 +13,8 @@ export interface RankedMail extends MailMessage {
   reasons: string[]
   /** What the user said about this message, if anything. */
   verdict?: Verdict
+  /** When a snooze ends (or ended, for mail back from one). */
+  snoozedUntil?: string
 }
 
 export interface MailResult {
@@ -20,6 +22,10 @@ export interface MailResult {
   items: RankedMail[]
   problems: string[]
   ranking: MailRanking
+  /** Mail hidden until a later time. */
+  snoozed: RankedMail[]
+  /** Accounts that can only read mail until they are reconnected. */
+  readOnly: string[]
 }
 
 /**
@@ -29,9 +35,11 @@ export interface MailResult {
 export interface MailPrefs {
   senders: Record<string, { important: number; not: number }>
   messages: Record<string, { verdict: Verdict; at: string }>
+  /** Message id → when it comes back. Snoozing is the app's own, so it works for every provider. */
+  snoozed: Record<string, string>
 }
 
-export const EMPTY_PREFS: MailPrefs = { senders: {}, messages: {} }
+export const EMPTY_PREFS: MailPrefs = { senders: {}, messages: {}, snoozed: {} }
 
 export function normalizePrefs(raw: unknown): MailPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
@@ -45,7 +53,54 @@ export function normalizePrefs(raw: unknown): MailPrefs {
   for (const [k, v] of Object.entries((r.messages && typeof r.messages === 'object' ? r.messages : {}) as Record<string, any>)) {
     if ((v?.verdict === 'important' || v?.verdict === 'not') && typeof v.at === 'string') messages[k] = { verdict: v.verdict, at: v.at }
   }
-  return { senders, messages }
+  const snoozed: MailPrefs['snoozed'] = {}
+  for (const [k, v] of Object.entries((r.snoozed && typeof r.snoozed === 'object' ? r.snoozed : {}) as Record<string, unknown>)) {
+    if (typeof v === 'string' && !Number.isNaN(Date.parse(v))) snoozed[k] = v
+  }
+  return { senders, messages, snoozed }
+}
+
+export type SnoozeOption = 'later' | 'evening' | 'tomorrow' | 'weekend' | 'nextweek'
+export const SNOOZE_OPTIONS: { value: SnoozeOption; label: string }[] = [
+  { value: 'later', label: 'In 3 hours' },
+  { value: 'evening', label: 'This evening' },
+  { value: 'tomorrow', label: 'Tomorrow morning' },
+  { value: 'weekend', label: 'This weekend' },
+  { value: 'nextweek', label: 'Next week' }
+]
+
+/** When a snooze ends, in local time: mornings are 8:00, evenings 18:00. */
+export function snoozeUntil(option: SnoozeOption, now = new Date()): Date {
+  const at = (days: number, hour: number): Date => {
+    const d = new Date(now)
+    d.setDate(d.getDate() + days)
+    d.setHours(hour, 0, 0, 0)
+    return d
+  }
+  switch (option) {
+    case 'later':
+      return new Date(now.getTime() + 3 * 3_600_000)
+    case 'evening':
+      // After 17:00 "this evening" means tomorrow's.
+      return at(now.getHours() >= 17 ? 1 : 0, 18)
+    case 'tomorrow':
+      return at(1, 8)
+    case 'weekend': {
+      // Saturday 9:00; once that has passed, the next one.
+      const days = (6 - now.getDay() + 7) % 7
+      return at(days === 0 && now.getHours() >= 9 ? 7 : days, 9)
+    }
+    case 'nextweek':
+      return at((1 - now.getDay() + 7) % 7 || 7, 8)
+  }
+}
+
+/** Snoozes a message until `until`, or ends its snooze when null. */
+export function applySnooze(prefs: MailPrefs, id: string, until: Date | null): MailPrefs {
+  const snoozed = { ...prefs.snoozed }
+  if (until) snoozed[id] = until.toISOString()
+  else delete snoozed[id]
+  return { ...prefs, snoozed }
 }
 
 /**
@@ -67,13 +122,19 @@ export function applyVerdict(prefs: MailPrefs, m: Pick<MailMessage, 'id' | 'from
   }
   if (verdict) messages[m.id] = { verdict, at: now.toISOString() }
   else delete messages[m.id]
-  return { senders, messages }
+  return { ...prefs, senders, messages }
 }
 
 /** Forgets message verdicts older than `days`; sender counts stay. */
 export function prunePrefs(prefs: MailPrefs, now: Date, days = 60): MailPrefs {
   const cutoff = new Date(now.getTime() - days * 86_400_000).toISOString()
-  return { senders: prefs.senders, messages: Object.fromEntries(Object.entries(prefs.messages).filter(([, v]) => v.at >= cutoff)) }
+  // Mail back from a snooze stays on top for three days.
+  const woke = new Date(now.getTime() - 3 * 86_400_000).toISOString()
+  return {
+    senders: prefs.senders,
+    messages: Object.fromEntries(Object.entries(prefs.messages).filter(([, v]) => v.at >= cutoff)),
+    snoozed: Object.fromEntries(Object.entries(prefs.snoozed).filter(([, until]) => until >= woke))
+  }
 }
 
 /** Sender lean from -3 (always unimportant) to +3 (always important). */
@@ -154,8 +215,21 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
       score = Math.min(score, 0)
       reasons.unshift([99, 'You marked it not important'])
     }
+    const snoozedUntil = prefs.snoozed[m.id]
+    if (snoozedUntil && snoozedUntil <= now.toISOString() && verdict !== 'not') {
+      urgency = 'now'
+      score = Math.max(score, 40)
+      reasons.unshift([98, 'Back from snooze'])
+    }
     if (hours >= 0 && hours < 1 && reasons.length === 0) reasons.push([0, 'Just arrived'])
-    return { ...m, score, urgency, reasons: reasons.sort((a, b) => b[0] - a[0]).map(([, r]) => r), ...(verdict ? { verdict } : {}) }
+    return {
+      ...m,
+      score,
+      urgency,
+      reasons: reasons.sort((a, b) => b[0] - a[0]).map(([, r]) => r),
+      ...(verdict ? { verdict } : {}),
+      ...(snoozedUntil ? { snoozedUntil } : {})
+    }
   })
   return ranked.sort((a, b) => b.score - a.score || b.receivedAt.localeCompare(a.receivedAt))
 }

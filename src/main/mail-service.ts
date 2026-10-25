@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { MailMessage } from '../shared/accounts'
+import type { MailAction, MailMessage } from '../shared/accounts'
 import {
+  applySnooze,
   applyVerdict,
   EMPTY_PREFS,
   JEV_MAIL_QUESTIONS,
@@ -10,9 +11,11 @@ import {
   parseJevMail,
   prunePrefs,
   rankMail,
+  snoozeUntil,
   type MailPrefs,
   type MailResult,
   type MailSignal,
+  type SnoozeOption,
   type Verdict
 } from '../shared/mail'
 import type { Settings } from '../shared/settings'
@@ -99,7 +102,45 @@ export class MailService {
       }
     }
     const jevUsed = feed.items.some((m) => ai[m.id])
-    return { fetchedAt: this.now().toISOString(), items: rankMail(feed.items, this.prefs, this.now(), ai), problems, ranking: jevUsed ? 'jev' : 'local' }
+    const now = this.now().toISOString()
+    const ranked = rankMail(feed.items, this.prefs, this.now(), ai)
+    return {
+      fetchedAt: now,
+      items: ranked.filter((m) => !(m.snoozedUntil && m.snoozedUntil > now)),
+      snoozed: ranked.filter((m) => m.snoozedUntil && m.snoozedUntil > now).sort((a, b) => a.snoozedUntil!.localeCompare(b.snoozedUntil!)),
+      problems,
+      ranking: jevUsed ? 'jev' : 'local',
+      readOnly: this.accounts.readOnly()
+    }
+  }
+
+  /** Changes messages at their providers. Archiving or trashing one also ends its snooze. */
+  async act(ids: string[], action: MailAction): Promise<void> {
+    const byAccount = new Map<string, string[]>()
+    for (const id of ids) {
+      const m = this.last.find((x) => x.id === id)
+      if (!m) throw new Error('That message is no longer loaded. Refresh and try again.')
+      byAccount.set(m.accountId, [...(byAccount.get(m.accountId) ?? []), id])
+    }
+    for (const [accountId, list] of byAccount) await this.accounts.act(accountId, list, action)
+    if (action === 'archive' || action === 'trash') {
+      this.last = this.last.filter((m) => !ids.includes(m.id))
+      for (const id of ids) this.prefs = applySnooze(this.prefs, id, null)
+      this.save()
+    }
+  }
+
+  /** Hides a message until the chosen time (null brings it back now). Returns when it comes back. */
+  snooze(id: string, option: SnoozeOption | null): string | null {
+    if (!this.last.some((x) => x.id === id)) throw new Error('That message is no longer loaded. Refresh and try again.')
+    const until = option ? snoozeUntil(option, this.now()) : null
+    this.prefs = applySnooze(this.prefs, id, until)
+    this.save()
+    return until?.toISOString() ?? null
+  }
+
+  private save(): void {
+    writeFileSync(this.prefsFile, JSON.stringify(this.prefs))
   }
 
   /** Records "important" or "not important" on a message (null takes it back). */
@@ -107,13 +148,13 @@ export class MailService {
     const m = this.last.find((x) => x.id === id)
     if (!m) throw new Error('That message is no longer loaded. Refresh and try again.')
     this.prefs = prunePrefs(applyVerdict(this.prefs, m, verdict, this.now()), this.now())
-    writeFileSync(this.prefsFile, JSON.stringify(this.prefs))
+    this.save()
   }
 
-  /** Forgets everything the user taught the ranking. */
+  /** Forgets everything the user taught the ranking; snoozes stay. */
   resetFeedback(): void {
-    this.prefs = EMPTY_PREFS
-    writeFileSync(this.prefsFile, JSON.stringify(this.prefs))
+    this.prefs = { ...EMPTY_PREFS, snoozed: this.prefs.snoozed }
+    this.save()
   }
 
   /** How many senders the ranking has learned about, for Settings. */

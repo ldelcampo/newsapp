@@ -1,4 +1,4 @@
-import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailBody, type MailMessage, type Provider } from '../../shared/accounts'
+import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailAction, type MailBody, type MailMessage, type Provider } from '../../shared/accounts'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountFeed } from '../../shared/api'
 import type { AccountStore } from './store'
@@ -96,6 +96,36 @@ export class AccountService {
     if (force) for (const k of [...this.cache.keys()]) if (k.startsWith('mail:')) this.cache.delete(k)
     const { lists, problems } = await this.gather('mail', MAIL_TTL, (a) => a.mail, (c, a) => c.recentMail(a, perAccount))
     return { items: mergeMail(lists, limit), problems }
+  }
+
+  /** Accounts whose sign-in only allows reading mail. */
+  readOnly(): string[] {
+    return this.store.list().filter((a) => a.mail && this.connectors[a.provider]?.canChange?.(a) === false).map((a) => a.id)
+  }
+
+  /** Changes messages at the provider, then updates the cached inbox to match, so the next list shows it at once. */
+  async act(accountId: string, ids: string[], action: MailAction): Promise<void> {
+    const account = this.store.get(accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.act) throw new Error('This account can’t change mail from the app yet.')
+    try {
+      await c.act(account, ids, action)
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
+    const key = `mail:${accountId}`
+    const hit = this.cache.get(key)
+    if (!hit) return
+    const set = new Set(ids)
+    const list = (hit.value as MailMessage[]).flatMap((m): MailMessage[] => {
+      if (!set.has(m.id)) return [m]
+      if (action === 'archive' || action === 'trash') return []
+      if (action === 'read' || action === 'unread') return [{ ...m, unread: action === 'unread' }]
+      return [{ ...m, starred: action === 'star' }]
+    })
+    this.cache.set(key, { at: hit.at, value: list })
   }
 
   async message(accountId: string, id: string): Promise<MailBody> {

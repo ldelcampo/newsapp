@@ -1,45 +1,126 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Account, MailBody } from '@shared/accounts'
-import { byDate, type MailUrgency, type RankedMail, type Verdict } from '@shared/mail'
+import type { Account, MailAction, MailBody } from '@shared/accounts'
+import { byDate, SNOOZE_OPTIONS, type MailUrgency, type RankedMail, type SnoozeOption, type Verdict } from '@shared/mail'
 import { ArticleSkeleton } from './ArticleList'
 import { Icon } from './Icon'
 import { AccountTag, ConnectPrompt, MailList, Problems, VerdictButtons } from './Inbox'
 import { errorText, useAccounts, useMail } from './useAccounts'
 import { timeAgo } from './useNews'
 
-type Tab = 'needs' | 'all'
+type Tab = 'needs' | 'all' | 'snoozed'
+/** Changes shown before the provider confirms them; `gone` hides archived, trashed and snoozed mail. */
+type Override = Partial<Pick<RankedMail, 'unread' | 'starred' | 'snoozedUntil'>> & { verdict?: Verdict | null; gone?: boolean }
+
+const ACTION_LABELS: Record<MailAction, string> = { read: 'Marked as read', unread: 'Marked as unread', archive: 'Archived', trash: 'Moved to Trash', star: 'Starred', unstar: 'Unstarred' }
+const until = (iso: string): string => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
 
 /** Every inbox in one list: "Needs you" ranks it, "All mail" keeps inbox order. */
 export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
-  const { accounts } = useAccounts()
+  const { accounts, refresh } = useAccounts()
   const { feed, error, loading, reload } = useMail()
   const [tab, setTab] = useState<Tab>('needs')
   const [account, setAccount] = useState('')
-  const [open, setOpen] = useState<RankedMail | null>(null)
-  // Verdicts show at once; the next load brings the re-ranked list.
-  const [verdicts, setVerdicts] = useState<Record<string, Verdict | null>>({})
+  const [openId, setOpenId] = useState('')
+  const [overrides, setOverrides] = useState<Record<string, Override>>({})
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
 
   const withMail = accounts?.filter((a) => a.mail) ?? []
-  const items = useMemo(
-    () => (feed?.items ?? []).map((m) => (m.id in verdicts ? { ...m, verdict: verdicts[m.id] ?? undefined } : m)).filter((m) => !account || m.accountId === account),
-    [feed, verdicts, account]
-  )
+  const apply = (m: RankedMail): RankedMail & { gone?: boolean } => {
+    const o = overrides[m.id]
+    if (!o) return m
+    const { verdict, ...rest } = o
+    return { ...m, ...rest, ...(verdict !== undefined ? { verdict: verdict ?? undefined } : {}) }
+  }
+  const [items, snoozed] = useMemo(() => {
+    const now = new Date().toISOString()
+    const every = [...(feed?.items ?? []), ...(feed?.snoozed ?? [])].map(apply).filter((m) => !m.gone && (!account || m.accountId === account))
+    const later = (m: RankedMail): boolean => !!m.snoozedUntil && m.snoozedUntil > now
+    return [every.filter((m) => !later(m)), every.filter(later).sort((a, b) => a.snoozedUntil!.localeCompare(b.snoozedUntil!))]
+  }, [feed, overrides, account])
+  const open = [...items, ...snoozed].find((m) => m.id === openId) ?? null
+
+  const set = (id: string, o: Override): void => setOverrides((x) => ({ ...x, [id]: { ...x[id], ...o } }))
+  const undo = (id: string, keys: (keyof Override)[]): void =>
+    setOverrides((x) => ({ ...x, [id]: Object.fromEntries(Object.entries(x[id] ?? {}).filter(([k]) => !keys.includes(k as keyof Override))) }))
+  const say = (text: string, isError = false): void => {
+    setNotice({ text, error: isError })
+    if (!isError) setTimeout(() => setNotice((n) => (n?.text === text ? null : n)), 4000)
+  }
+
+  const act = (m: RankedMail, action: MailAction, quiet = false): void => {
+    const o: Override =
+      action === 'archive' || action === 'trash' ? { gone: true } : action === 'read' || action === 'unread' ? { unread: action === 'unread' } : { starred: action === 'star' }
+    set(m.id, o)
+    if (o.gone && openId === m.id) setOpenId('')
+    window.hub.mailAct([m.id], action).then(
+      () => !quiet && say(ACTION_LABELS[action]),
+      (e: Error) => {
+        undo(m.id, Object.keys(o) as (keyof Override)[])
+        if (!quiet) say(errorText(e), true)
+      }
+    )
+  }
+  const snooze = (m: RankedMail, option: SnoozeOption | null): void => {
+    window.hub.mailSnooze(m.id, option).then(
+      (at) => {
+        set(m.id, { snoozedUntil: at ?? undefined })
+        if (at && openId === m.id) setOpenId('')
+        say(at ? `Snoozed until ${until(at)}` : 'Back in your inbox')
+        reload()
+      },
+      (e: Error) => say(errorText(e), true)
+    )
+  }
+  const verdict = (m: RankedMail, v: Verdict | null): void => {
+    set(m.id, { verdict: v })
+    window.hub
+      .mailFeedback(m.id, v)
+      .then(() => reload())
+      .catch(() => undo(m.id, ['verdict']))
+  }
+  const select = (m: RankedMail): void => {
+    setOpenId(m.id)
+    // Opening a message reads it, as in any mail app; read-only accounts just skip this.
+    if (m.unread && !feed?.readOnly.includes(m.accountId)) act(m, 'read', true)
+  }
+  const allowChanges = (id: string): void => {
+    window.hub.reconnectAccount(id).then(
+      () => {
+        refresh()
+        reload(true)
+        say('Changes are allowed now.')
+      },
+      (e: Error) => say(errorText(e), true)
+    )
+  }
+
+  // Keyboard: e archive, # delete, s star, u unread, Esc closes the message.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return
+      if (e.key === 'e') act(open, 'archive')
+      else if (e.key === '#') act(open, 'trash')
+      else if (e.key === 's') act(open, open.starred ? 'unstar' : 'star')
+      else if (e.key === 'u') act(open, 'unread')
+      else if (e.key === 'Escape') setOpenId('')
+      else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   if (accounts && withMail.length === 0) return <ConnectPrompt what="mail" onOpen={onAdd} />
 
   const needs = items.filter((m) => m.verdict !== 'not' && (m.verdict === 'important' || m.urgency !== 'later'))
   const groups = (['now', 'soon'] as MailUrgency[]).map((u) => ({ u, list: needs.filter((m) => (m.verdict === 'important' ? 'now' : m.urgency) === u) })).filter((g) => g.list.length)
   const all = [...items].sort(byDate)
+  const readOnly = withMail.filter((a) => feed?.readOnly.includes(a.id))
 
-  const verdict = (m: RankedMail, v: Verdict | null): void => {
-    setVerdicts((x) => ({ ...x, [m.id]: v }))
-    if (open?.id === m.id) setOpen({ ...open, verdict: v ?? undefined })
-    window.hub
-      .mailFeedback(m.id, v)
-      .then(() => reload())
-      .catch(() => setVerdicts((x) => ({ ...x, [m.id]: m.verdict ?? null })))
-  }
+  const actions = (m: RankedMail): React.JSX.Element => <MailActions m={m} onAct={act} onSnooze={snooze} />
   const list = (mail: RankedMail[]): React.JSX.Element => (
-    <MailList mail={mail} accounts={withMail} selected={open?.id} onSelect={setOpen} onVerdict={verdict} />
+    <MailList mail={mail} accounts={withMail} selected={openId} onSelect={select} onVerdict={verdict} actions={actions} />
   )
   const status = loading ? 'Updating…' : feed ? `Updated ${timeAgo(feed.fetchedAt)} · ${feed.ranking === 'jev' ? 'ranked with Jev' : 'built-in ranking'}` : ''
 
@@ -60,6 +141,11 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
           <button role="tab" className={tab === 'all' ? 'chip on' : 'chip'} aria-selected={tab === 'all'} onClick={() => setTab('all')}>
             All mail <span className="count">{items.length}</span>
           </button>
+          {(snoozed.length > 0 || tab === 'snoozed') && (
+            <button role="tab" className={tab === 'snoozed' ? 'chip on' : 'chip'} aria-selected={tab === 'snoozed'} onClick={() => setTab('snoozed')}>
+              Snoozed <span className="count">{snoozed.length}</span>
+            </button>
+          )}
           {withMail.length > 1 && (
             <select aria-label="Account" value={account} onChange={(e) => setAccount(e.target.value)}>
               <option value="">All accounts</option>
@@ -73,13 +159,34 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
         </div>
       </div>
 
+      {readOnly.map((a) => (
+        <p key={a.id} className="hint small enter">
+          {a.email} can only read mail. To archive, delete, star or reply from here, Google needs to allow changes.{' '}
+          <button className="link" onClick={() => allowChanges(a.id)}>
+            Allow changes <Icon name="arrow" />
+          </button>
+        </p>
+      ))}
+      {notice && (
+        <p className={notice.error ? 'error small' : 'ok small'} role="status">
+          {notice.text}
+          {notice.error && (
+            <button className="link" onClick={() => setNotice(null)} aria-label="Dismiss">
+              {' '}
+              <Icon name="close" />
+            </button>
+          )}
+        </p>
+      )}
+
       <div className="mail-panes">
         <section className="card enter mail-list-card" style={{ '--i': 1 } as React.CSSProperties}>
           {error && <p className="error small">Couldn’t load mail: {error}</p>}
           {!feed && !error && <ArticleSkeleton rows={6} />}
-          {feed && items.length === 0 && <p className="muted">Your inbox is empty.</p>}
+          {feed && tab !== 'snoozed' && items.length === 0 && <p className="muted">Your inbox is empty.</p>}
           {feed && tab === 'needs' && items.length > 0 && needs.length === 0 && <p className="muted">Nothing needs you right now.</p>}
-          {feed && tab === 'needs' &&
+          {feed &&
+            tab === 'needs' &&
             groups.map((g) => (
               <div key={g.u} className="ticket-group">
                 <h3 className={`urgency-head urgency-${g.u}`}>
@@ -89,16 +196,69 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
               </div>
             ))}
           {feed && tab === 'all' && list(all)}
+          {feed && tab === 'snoozed' && (snoozed.length ? list(snoozed) : <p className="muted">Nothing is snoozed.</p>)}
           {feed && <Problems problems={feed.problems} />}
         </section>
-        {open && <Reader m={open} accounts={withMail} onClose={() => setOpen(null)} onVerdict={verdict} />}
+        {open && <Reader m={open} accounts={withMail} onClose={() => setOpenId('')} onVerdict={verdict} actions={actions(open)} />}
       </div>
     </div>
   )
 }
 
+/** Archive, delete, star, read/unread and snooze for one message. */
+function MailActions({ m, onAct, onSnooze }: { m: RankedMail; onAct: (m: RankedMail, a: MailAction) => void; onSnooze: (m: RankedMail, o: SnoozeOption | null) => void }): React.JSX.Element {
+  return (
+    <div className="mail-actions" role="group" aria-label="Message actions">
+      <button className="ghost icon-only" title="Archive (e)" aria-label="Archive" onClick={() => onAct(m, 'archive')}>
+        <Icon name="archive" />
+      </button>
+      <button className="ghost icon-only" title="Delete (#)" aria-label="Delete" onClick={() => onAct(m, 'trash')}>
+        <Icon name="trash" />
+      </button>
+      <button
+        className={`ghost icon-only ${m.starred ? 'starred' : ''}`}
+        title={m.starred ? 'Unstar (s)' : 'Star (s)'}
+        aria-label={m.starred ? 'Unstar' : 'Star'}
+        aria-pressed={!!m.starred}
+        onClick={() => onAct(m, m.starred ? 'unstar' : 'star')}
+      >
+        <Icon name="star" />
+      </button>
+      <button className="ghost icon-only" title={m.unread ? 'Mark as read' : 'Mark as unread (u)'} aria-label={m.unread ? 'Mark as read' : 'Mark as unread'} onClick={() => onAct(m, m.unread ? 'read' : 'unread')}>
+        <Icon name="mail" />
+      </button>
+      <label className="snooze" title={m.snoozedUntil ? `Snoozed until ${until(m.snoozedUntil)}` : 'Snooze'}>
+        <Icon name="snooze" />
+        <select aria-label="Snooze" value="" onChange={(e) => onSnooze(m, e.target.value === 'wake' ? null : (e.target.value as SnoozeOption))}>
+          <option value="" disabled>
+            Snooze until…
+          </option>
+          {SNOOZE_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+          {m.snoozedUntil && <option value="wake">Unsnooze now</option>}
+        </select>
+      </label>
+    </div>
+  )
+}
+
 /** One message in full. HTML runs in a sandbox with no scripts, and remote images stay off until asked for. */
-function Reader({ m, accounts, onClose, onVerdict }: { m: RankedMail; accounts: Account[]; onClose: () => void; onVerdict: (m: RankedMail, v: Verdict | null) => void }): React.JSX.Element {
+function Reader({
+  m,
+  accounts,
+  onClose,
+  onVerdict,
+  actions
+}: {
+  m: RankedMail
+  accounts: Account[]
+  onClose: () => void
+  onVerdict: (m: RankedMail, v: Verdict | null) => void
+  actions: React.ReactNode
+}): React.JSX.Element {
   const [body, setBody] = useState<MailBody | null>(null)
   const [error, setError] = useState('')
   const [images, setImages] = useState(false)
@@ -114,13 +274,14 @@ function Reader({ m, accounts, onClose, onVerdict }: { m: RankedMail; accounts: 
     <section className="card enter reader" aria-label="Message">
       <header className="reader-head">
         <div className="reader-actions">
+          {actions}
           <VerdictButtons m={m} onVerdict={onVerdict} />
           {m.webUrl && (
-            <button className="ghost" onClick={() => void window.hub.openExternal(m.webUrl!)} title="Open in the provider’s site">
-              <Icon name="external" /> Open
+            <button className="ghost icon-only" onClick={() => void window.hub.openExternal(m.webUrl!)} title="Open in Gmail" aria-label="Open in Gmail">
+              <Icon name="external" />
             </button>
           )}
-          <button className="ghost icon-only" onClick={onClose} aria-label="Close message">
+          <button className="ghost icon-only" onClick={onClose} aria-label="Close message" title="Close (Esc)">
             <Icon name="close" />
           </button>
         </div>
@@ -155,11 +316,16 @@ function Reader({ m, accounts, onClose, onVerdict }: { m: RankedMail; accounts: 
           </button>
         </p>
       )}
-      {body && (body.html ? <iframe className="mail-frame" title="Message" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={frameDoc(body.html, images)} /> : <pre className="mail-text">{body.text}</pre>)}
+      {body &&
+        (body.html ? (
+          <iframe className="mail-frame" title="Message" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={frameDoc(body.html, images)} />
+        ) : (
+          <pre className="mail-text">{body.text}</pre>
+        ))}
       {body && body.attachments.length > 0 && (
         <p className="muted small">
           Attachments: {body.attachments.join(', ')}
-          {m.webUrl ? ' (open the message in your mail to download them)' : ''}
+          {m.webUrl ? ' (open the message in Gmail to download them)' : ''}
         </p>
       )}
     </section>

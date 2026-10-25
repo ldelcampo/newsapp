@@ -1,7 +1,7 @@
 import type { TicketResult } from './jira'
 import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
-import type { Account, CalendarEvent, ConnectionTest, MailBody, Provider } from './accounts'
-import type { MailResult, Verdict } from './mail'
+import type { Account, CalendarEvent, ConnectionTest, MailAction, MailBody, Provider } from './accounts'
+import type { MailResult, SnoozeOption, Verdict } from './mail'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -110,6 +110,10 @@ export interface HubApi {
   mailBody(accountId: string, id: string): Promise<MailBody>
   /** Teaches the ranking that a message (and its sender) is important or not; null takes it back. */
   mailFeedback(id: string, verdict: Verdict | null): Promise<void>
+  /** Archive, trash, read/unread or star messages at their providers. */
+  mailAct(ids: string[], action: MailAction): Promise<void>
+  /** Hides a message until later; null brings it back now. Returns when it comes back. */
+  mailSnooze(id: string, option: SnoozeOption | null): Promise<string | null>
   /** How many senders the ranking has learned about. */
   mailLearned(): Promise<number>
   /** Forgets everything the user taught the mail ranking. */

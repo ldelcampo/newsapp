@@ -628,3 +628,14 @@ button.chip { font: inherit; color: var(--fg); }
 .mail-frame { width: 100%; flex: 1; min-height: 360px; border: 0; border-radius: 10px; background: #fff; }
 .mail-text { white-space: pre-wrap; word-wrap: break-word; font: inherit; margin: 0; overflow: auto; flex: 1; }
 @media (max-width: 1000px) { .mail-view.reading .mail-panes { grid-template-columns: 1fr; } .reader { position: static; max-height: none; } }
+.mail-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.mail-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+.mail li:hover .mail-actions, .mail li:focus-within .mail-actions, .reader .mail-actions { opacity: 1; }
+.mail-actions .icon-only { padding: 5px; }
+.mail-actions .icon { width: 15px; height: 15px; }
+.mail-actions .starred { color: var(--warn); }
+.mail-actions .starred .icon path { fill: currentColor; }
+.mail-actions .snooze { position: relative; display: inline-grid; place-items: center; padding: 5px; border-radius: 8px; color: var(--muted); cursor: pointer; }
+.mail-actions .snooze:hover { color: var(--fg); background: var(--accent-soft); }
+.mail-actions .snooze select { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.reader-actions { flex-wrap: wrap; }

@@ -52,6 +52,10 @@ export interface MailMessage {
   unsubscribe?: string
 }
 
+/** What can be done to messages from the app. */
+export type MailAction = 'read' | 'unread' | 'archive' | 'trash' | 'star' | 'unstar'
+export const MAIL_ACTIONS: MailAction[] = ['read', 'unread', 'archive', 'trash', 'star', 'unstar']
+
 /** One message in full, for reading inside the app. */
 export interface MailBody {
   id: string

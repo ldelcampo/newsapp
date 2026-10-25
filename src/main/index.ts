@@ -6,7 +6,8 @@ import { makeProvider } from './ai-providers'
 import { FactCheckService } from './fact-check-service'
 import { SecretStore } from './secret-store'
 import { PROVIDERS as AI_PROVIDERS, SECRET_NAMES, SYSTEM_PROMPT, type ProviderId, type SecretName } from '../shared/factcheck'
-import { PROVIDERS, type Provider } from '../shared/accounts'
+import { MAIL_ACTIONS, PROVIDERS, type MailAction, type Provider } from '../shared/accounts'
+import { SNOOZE_OPTIONS, type SnoozeOption } from '../shared/mail'
 import { GoogleConnector } from './accounts/google'
 import { googleClient } from './accounts/google-client'
 import { ImapConnector, testImap } from './accounts/imap'
@@ -297,6 +298,13 @@ app.whenReady().then(() => {
   ipcMain.handle('accounts:mail', (_e, force: unknown) => mail.load(store.load(), force === true))
   ipcMain.handle('mail:body', (_e, a: unknown, m: unknown) => accounts.message(id(a), id(m)))
   ipcMain.handle('mail:feedback', (_e, m: unknown, verdict: unknown) => mail.feedback(id(m), verdict === 'important' || verdict === 'not' ? verdict : null))
+  ipcMain.handle('mail:act', (_e, ids: unknown, action: unknown) => {
+    if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !MAIL_ACTIONS.includes(action as MailAction)) throw new Error('Nothing to do.')
+    return mail.act(ids.map(id), action as MailAction)
+  })
+  ipcMain.handle('mail:snooze', (_e, m: unknown, option: unknown) =>
+    mail.snooze(id(m), SNOOZE_OPTIONS.some((o) => o.value === option) ? (option as SnoozeOption) : null)
+  )
   ipcMain.handle('mail:learned', () => mail.learned())
   ipcMain.handle('mail:reset-feedback', () => mail.resetFeedback())
   ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
