@@ -170,12 +170,29 @@ export function parseWeather(json: unknown): Weather {
 }
 
 /** Open-Meteo's geocoding /search response. */
-export function parsePlaces(json: unknown): Place[] {
+export function parsePlaces(json: unknown, near: string[] = []): Place[] {
   const results = (json as { results?: unknown[] })?.results ?? []
-  return results.flatMap((r) => {
-    const x = r as { name?: unknown; latitude?: unknown; longitude?: unknown; admin1?: unknown; country?: unknown }
+  const places = results.flatMap((r) => {
+    const x = r as { name?: unknown; latitude?: unknown; longitude?: unknown; admin1?: unknown; country?: unknown; country_code?: unknown }
     if (typeof x.name !== 'string' || typeof x.latitude !== 'number' || typeof x.longitude !== 'number') return []
     const where = [x.admin1, x.country].filter((s): s is string => typeof s === 'string' && s !== x.name)
-    return [{ name: [x.name, ...where].join(', '), latitude: x.latitude, longitude: x.longitude }]
+    const tags = [x.admin1, x.country, x.country_code].filter((s): s is string => typeof s === 'string').map(fold)
+    return [{ place: { name: [x.name, ...where].join(', '), latitude: x.latitude, longitude: x.longitude }, tags }]
   })
+  // "Monterrey, Mexico": keep the matches in that state or country, if any.
+  const wanted = near.map(fold).filter(Boolean)
+  const inside = places.filter((p) => wanted.every((w) => p.tags.some((t) => t.startsWith(w) || t === w)))
+  return (inside.length ? inside : places).map((p) => p.place)
+}
+
+/** Lower case without accents, so "nuevo leon" finds "Nuevo León". */
+const fold = (s: string): string => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+
+/**
+ * Open-Meteo matches place names only, so "Monterrey, Mexico" finds nothing. The part before
+ * the first comma is the name; the rest narrows the results.
+ */
+export function placeQuery(raw: string): { name: string; near: string[] } {
+  const [name, ...near] = raw.split(',').map((s) => s.trim())
+  return { name: name ?? '', near: near.filter(Boolean) }
 }
