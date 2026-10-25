@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Account, MailAction, MailBody } from '@shared/accounts'
-import { byDate, SNOOZE_OPTIONS, type MailUrgency, type RankedMail, type SnoozeOption, type Verdict } from '@shared/mail'
+import { byDate, MAIL_CATEGORIES, SNOOZE_OPTIONS, type MailCategory, type MailUrgency, type RankedMail, type SnoozeOption, type Verdict } from '@shared/mail'
 import { ArticleSkeleton } from './ArticleList'
 import { Icon } from './Icon'
 import { AccountTag, ConnectPrompt, MailList, Problems, VerdictButtons } from './Inbox'
 import { Composer, ReaderTools } from './MailCompose'
+import { QuickRule, RulesPanel } from './MailRules'
 import { errorText, useAccounts, useMail } from './useAccounts'
 import { timeAgo } from './useNews'
 
-type Tab = 'needs' | 'all' | 'snoozed'
+type Tab = 'needs' | 'all' | 'snoozed' | MailCategory
 /** Changes shown before the provider confirms them; `gone` hides archived, trashed and snoozed mail. */
 type Override = Partial<Pick<RankedMail, 'unread' | 'starred' | 'snoozedUntil'>> & { verdict?: Verdict | null; gone?: boolean }
 
@@ -25,6 +26,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const [overrides, setOverrides] = useState<Record<string, Override>>({})
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [composing, setComposing] = useState(false)
+  const [rulesOpen, setRulesOpen] = useState(false)
 
   const withMail = accounts?.filter((a) => a.mail) ?? []
   const apply = (m: RankedMail): RankedMail & { gone?: boolean } => {
@@ -82,6 +84,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   }
   const select = (m: RankedMail): void => {
     setComposing(false)
+    setRulesOpen(false)
     setOpenId(m.id)
     // Opening a message reads it, as in any mail app; read-only accounts just skip this.
     if (m.unread && !feed?.readOnly.includes(m.accountId)) act(m, 'read', true)
@@ -116,7 +119,9 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
 
   if (accounts && withMail.length === 0) return <ConnectPrompt what="mail" onOpen={onAdd} />
 
-  const needs = items.filter((m) => m.verdict !== 'not' && (m.verdict === 'important' || m.urgency !== 'later'))
+  const needs = items.filter((m) => m.verdict !== 'not' && (m.verdict === 'important' || (m.urgency !== 'later' && !m.hidden)))
+  const kinds = MAIL_CATEGORIES.map((c) => ({ ...c, list: items.filter((m) => m.kind === c.value && !m.hidden).sort(byDate) })).filter((c) => c.list.length || tab === c.value)
+  const inKind = kinds.find((c) => c.value === tab)?.list
   const groups = (['now', 'soon'] as MailUrgency[]).map((u) => ({ u, list: needs.filter((m) => (m.verdict === 'important' ? 'now' : m.urgency) === u) })).filter((g) => g.list.length)
   const all = [...items].sort(byDate)
   const readOnly = withMail.filter((a) => feed?.readOnly.includes(a.id))
@@ -128,7 +133,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const status = loading ? 'Updating…' : feed ? `Updated ${timeAgo(feed.fetchedAt)} · ${feed.ranking === 'jev' ? 'ranked with Jev' : 'built-in ranking'}` : ''
 
   return (
-    <div className={`mail-view ${open || composing ? 'reading' : ''}`}>
+    <div className={`mail-view ${open || composing || rulesOpen ? 'reading' : ''}`}>
       <div className="toolbar enter">
         <div className="news-status">
           <span className="status">{status}</span>
@@ -136,14 +141,23 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
             <Icon name="refresh" className={loading ? 'spin' : ''} />
             Refresh
           </button>
-          <button className="primary" onClick={() => (setOpenId(''), setComposing(true))}>
+          <button className="primary" onClick={() => (setOpenId(''), setRulesOpen(false), setComposing(true))}>
             <Icon name="edit" /> Write
+          </button>
+          <button className={rulesOpen ? 'ghost on' : 'ghost'} onClick={() => (setOpenId(''), setComposing(false), setRulesOpen((r) => !r))}>
+            <Icon name="settings" /> Rules
+            {(feed?.suggestions.length ?? 0) > 0 && <span className="count">{feed!.suggestions.length} new</span>}
           </button>
         </div>
         <div className="chips" role="tablist" aria-label="Which mail">
           <button role="tab" className={tab === 'needs' ? 'chip on' : 'chip'} aria-selected={tab === 'needs'} onClick={() => setTab('needs')}>
-            Needs you <span className="count">{needs.length}</span>
+            Important <span className="count">{needs.length}</span>
           </button>
+          {kinds.map((c) => (
+            <button key={c.value} role="tab" className={tab === c.value ? 'chip on' : 'chip'} aria-selected={tab === c.value} onClick={() => setTab(c.value)}>
+              {c.label} <span className="count">{c.list.length}</span>
+            </button>
+          ))}
           <button role="tab" className={tab === 'all' ? 'chip on' : 'chip'} aria-selected={tab === 'all'} onClick={() => setTab('all')}>
             All mail <span className="count">{items.length}</span>
           </button>
@@ -199,6 +213,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
               </div>
             ))}
           {feed && tab === 'all' && list(all)}
+          {feed && inKind && list(inKind)}
           {feed && tab === 'snoozed' && (snoozed.length ? list(snoozed) : <p className="muted">Nothing is snoozed.</p>)}
           {feed && <Problems problems={feed.problems} />}
         </section>
@@ -208,11 +223,17 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
             accounts={withMail}
             onClose={() => setOpenId('')}
             onVerdict={verdict}
-            actions={actions(open)}
+            actions={
+              <>
+                {actions(open)}
+                <QuickRule m={open} onSaved={(t) => (say(t), reload())} />
+              </>
+            }
             tools={<ReaderTools m={open} accounts={withMail} readOnly={!!feed?.readOnly.includes(open.accountId)} onDone={say} />}
           />
         )}
-        {!open && !composing && (
+        {rulesOpen && !open && !composing && <RulesPanel suggestions={feed?.suggestions ?? []} onClose={() => setRulesOpen(false)} onChanged={() => reload()} />}
+        {!open && !composing && !rulesOpen && (
           <section className="card reader reader-empty" aria-hidden="true">
             <Icon name="mail" />
             <p className="muted">Choose a message to read it here.</p>

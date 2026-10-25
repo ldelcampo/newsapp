@@ -42,6 +42,7 @@ describe('SettingsStore', () => {
       projectWeights: {},
       ticketRanking: 'local',
       mailRanking: 'local',
+      mailRules: [],
       factCheck: DEFAULT_SETTINGS.factCheck,
       syncFolder: ''
     })

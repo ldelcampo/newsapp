@@ -665,3 +665,15 @@ button.chip { font: inherit; color: var(--fg); }
 .summary-box p { margin: 0 0 4px; }
 .ideas .chip { max-width: 100%; }
 .task-form { display: flex; flex-direction: column; gap: 6px; }
+.mail-view .toolbar { align-items: flex-start; }
+.mail-view .toolbar .chips { justify-content: flex-end; flex: 1; }
+.ghost.on { border-color: var(--accent); background: var(--accent-soft); }
+.quick-rule { padding: 5px 8px; font-size: 0.8rem; max-width: 160px; }
+.rules .rule-group { display: flex; flex-direction: column; gap: 6px; }
+.rules .urgency-head .link { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.rule-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.rule-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.rule-list li + li { border-top: 1px solid var(--line); }
+.rule-list p { margin: 2px 0 0; }
+.rules .row input { flex: 1; min-width: 160px; }
+.reason.kind { border-style: dashed; }

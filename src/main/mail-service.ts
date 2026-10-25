@@ -6,6 +6,12 @@ import type { FactCheckProvider } from './ai-providers'
 import { toSnippet } from './accounts/imap'
 import {
   applySnooze,
+  learnedRules,
+  parseProposedRules,
+  rulesPrompt,
+  senderStats,
+  type MailRule,
+  type RankedMail,
   MAIL_AI_SYSTEM,
   parseReplies,
   parseSummary,
@@ -54,6 +60,8 @@ export class MailService {
   private jevCache: Record<string, MailSignal & { at: string }>
   /** The last messages shown, so feedback can find a message's sender. */
   private last: MailMessage[] = []
+  /** The same, ranked, for proposing rules. */
+  private ranked: RankedMail[] = []
 
   constructor(
     dir: string,
@@ -65,7 +73,7 @@ export class MailService {
     private readonly ai: () => FactCheckProvider | null = () => null
   ) {
     this.prefsFile = join(dir, 'mail-prefs.json')
-    this.jevFile = join(dir, 'jev-mail-cache.json')
+    this.jevFile = join(dir, 'jev-mail-cache-2.json')
     this.prefs = normalizePrefs(this.read(this.prefsFile))
     this.jevCache = (this.read(this.jevFile) as typeof this.jevCache) ?? {}
   }
@@ -110,20 +118,22 @@ export class MailService {
       if (!key) problems.push('Jev ranking is on, but there is no TypeSafe AI key on this computer. Add it in Settings.')
       else {
         // Only mail that might need the user: unread or recent, not already judged by the user.
-        const local = rankMail(feed.items, this.prefs, this.now()).filter((m) => !m.verdict && (m.unread || m.urgency !== 'later'))
+        const local = rankMail(feed.items, this.prefs, this.now(), {}, settings.mailRules).filter((m) => !m.verdict && (m.unread || m.urgency !== 'later'))
         ai = await this.jev(local.slice(0, JEV_TOP), key, problems)
       }
     }
     const jevUsed = feed.items.some((m) => ai[m.id])
     const now = this.now().toISOString()
-    const ranked = rankMail(feed.items, this.prefs, this.now(), ai)
+    const ranked = rankMail(feed.items, this.prefs, this.now(), ai, settings.mailRules)
+    this.ranked = ranked
     return {
       fetchedAt: now,
       items: ranked.filter((m) => !(m.snoozedUntil && m.snoozedUntil > now)),
       snoozed: ranked.filter((m) => m.snoozedUntil && m.snoozedUntil > now).sort((a, b) => a.snoozedUntil!.localeCompare(b.snoozedUntil!)),
       problems,
       ranking: jevUsed ? 'jev' : 'local',
-      readOnly: this.accounts.readOnly()
+      readOnly: this.accounts.readOnly(),
+      suggestions: learnedRules(this.prefs, settings.mailRules)
     }
   }
 
@@ -221,6 +231,21 @@ export class MailService {
     }
     await this.accounts.send({ accountId, to: method.to, cc: '', subject: method.subject, text: method.body })
     return { done: true, how: `An unsubscribe email went to ${method.to}.` }
+  }
+
+  /**
+   * Asks the user's AI to propose rules from the senders in the inbox and the user's marks. Only
+   * sender addresses, names, counts and subjects are sent; nothing is applied until accepted.
+   */
+  async proposeRules(settings: Settings): Promise<MailRule[]> {
+    const p = this.provider()
+    if (!this.ranked.length) await this.load(settings)
+    const stats = senderStats(this.ranked, this.prefs)
+    if (!stats.length) throw new Error('There’s no mail to learn from yet.')
+    const answer = await p.ask({ system: MAIL_AI_SYSTEM, prompt: rulesPrompt(stats, settings.mailRules) })
+    const rules = parseProposedRules(extractJson(answer.text), settings.mailRules, `ai:${this.now().getTime().toString(36)}:`)
+    if (!rules.length) throw new Error('The AI found no rules worth adding. Mark a few more messages and try again.')
+    return rules
   }
 
   /** A message from the last list, if it is still there. */

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { meetingPhase, type Account, type CalendarEvent } from '@shared/accounts'
-import type { MailUrgency, RankedMail, Verdict } from '@shared/mail'
+import { categoryLabel, type MailUrgency, type RankedMail, type Verdict } from '@shared/mail'
 import { Icon } from './Icon'
 import { timeAgo } from './useNews'
 
@@ -59,6 +59,7 @@ export function MailList({
             )}
             {!compact && m.snippet && <p className="summary">{m.snippet}</p>}
             <div className="meta">
+              {!compact && m.kind && <span className="reason kind">{categoryLabel(m.kind)}</span>}
               {m.reasons.slice(0, compact ? 1 : 3).map((r) => (
                 <span key={r} className="reason">
                   {r}

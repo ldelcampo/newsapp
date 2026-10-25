@@ -49,6 +49,7 @@ const api: HubApi = {
   mailSummary: (accountId, id) => ipcRenderer.invoke('mail:summary', accountId, id),
   mailUnsubscribe: (accountId, id) => ipcRenderer.invoke('mail:unsubscribe', accountId, id),
   mailTask: (accountId, id, task) => ipcRenderer.invoke('mail:task', accountId, id, task),
+  mailProposeRules: () => ipcRenderer.invoke('mail:propose-rules'),
   mailLearned: () => ipcRenderer.invoke('mail:learned'),
   resetMailFeedback: () => ipcRenderer.invoke('mail:reset-feedback'),
   upcomingEvents: () => ipcRenderer.invoke('accounts:events'),

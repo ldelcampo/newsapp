@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { addressedIn, isBulk, normalizeDraft, replySubject, type Account, type MailBody, type MailMessage } from '../src/shared/accounts'
-import { applySnooze, applyVerdict, EMPTY_PREFS, parseReplies, parseSummary, snoozeUntil, unsubscribeMethod, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
+import { applySnooze, applyVerdict, describeRule, EMPTY_PREFS, learnedRules, normalizeRules, parseProposedRules, parseReplies, rulesPrompt, senderStats, parseSummary, snoozeUntil, unsubscribeMethod, jevMailState, normalizePrefs, parseJevMail, rankMail, senderLean } from '../src/shared/mail'
 import { DEFAULT_SETTINGS } from '../src/shared/settings'
 import { GoogleConnector, parseGmailBody, parseGmailMessage } from '../src/main/accounts/google'
 import { SCOPES } from '../src/main/accounts/google-oauth'
@@ -180,7 +180,7 @@ describe('MailService', () => {
       expect(url).toBe(JEV_URL)
       const body = JSON.parse(String(init?.body))
       expect(body.model).toBe('jev-latest')
-      expect(Object.keys(body.questions)).toEqual(['urgency', 'action', 'automated'])
+      expect(Object.keys(body.questions)).toEqual(['urgency', 'action', 'automated', 'category'])
       calls++
       return new Response(JSON.stringify({ answers: { urgency: { score: 4, confidence: 0.9 }, action: { noul: 0.9 }, automated: { noul: 0 } } }))
     }
@@ -386,5 +386,85 @@ describe('AI help and unsubscribe', () => {
     expect(d).toContain('From Ana <ana@x.com>')
     expect(d).toContain('Please approve')
     expect(d).toContain('Open the email: https://mail.google.com/x')
+  })
+})
+
+describe('categories and rules', () => {
+  it('guesses categories from the message', () => {
+    const kinds = rankMail(
+      [
+        msg('ask', { subject: 'Can you review the contract?' }),
+        msg('fyi', { subject: 'Notes from today' }),
+        msg('news', { bulk: true, from: { name: 'Medium', email: 'digest@medium.com' } }),
+        msg('promo', { category: 'promotions', subject: '50% off this weekend' }),
+        msg('receipt', { from: { name: '', email: 'no-reply@airbnb.com' }, subject: 'Your booking receipt' }),
+        msg('alert', { from: { name: '', email: 'notifications@github.com' }, subject: 'New sign-in' })
+      ],
+      EMPTY_PREFS,
+      NOW
+    )
+    expect(Object.fromEntries(kinds.map((m) => [m.id, m.kind]))).toEqual({ ask: 'reply', fyi: 'fyi', news: 'newsletter', promo: 'promotion', receipt: 'receipt', alert: 'notification' })
+  })
+
+  it('takes Jev’s category when it is sure', () => {
+    const [m] = rankMail([msg('m')], EMPTY_PREFS, NOW, { m: { urgency: 1, action: 0, automated: 1, confidence: 0.9, category: 'receipt', categoryConfidence: 0.8 } })
+    expect(m.kind).toBe('receipt')
+    expect(parseJevMail({ answers: { urgency: { score: 1 }, category: { choice: 'promotion', confidence: 0.7 } } })).toMatchObject({ category: 'promotion', categoryConfidence: 0.7 })
+  })
+
+  it('applies the first matching rule: domains, subjects, hide and important', () => {
+    const rules = normalizeRules([
+      { id: '1', from: '@Activision.com', importance: 'hide', category: 'promotion', source: 'ai' },
+      { id: '2', subject: 'factura', category: 'receipt', source: 'you' },
+      { id: '3', from: 'boss@work.com', importance: 'important', source: 'you' },
+      { id: 'bad', from: 'not an address', importance: 'hide' }
+    ])
+    expect(rules).toHaveLength(3)
+    const ranked = rankMail(
+      [
+        msg('cod', { from: { name: '', email: 'callofduty@comms.activision.com' }, bulk: true }),
+        msg('inv', { subject: 'Tu Factura de octubre', unread: false, receivedAt: hoursAgo(100) }),
+        msg('boss', { from: { name: '', email: 'boss@work.com' }, unread: false, receivedAt: hoursAgo(100) })
+      ],
+      EMPTY_PREFS,
+      NOW,
+      {},
+      rules
+    )
+    const by = Object.fromEntries(ranked.map((m) => [m.id, m]))
+    expect(by.cod).toMatchObject({ kind: 'promotion', hidden: true, urgency: 'later' })
+    expect(by.inv.kind).toBe('receipt')
+    expect(by.boss.urgency).not.toBe('later')
+    expect(by.boss.reasons[0]).toBe('Your rule: important')
+    expect(describeRule(rules[0])).toBe('From @activision.com → Promotions, hidden')
+  })
+
+  it('offers rules the user’s marks support', () => {
+    let prefs = EMPTY_PREFS
+    for (const id of ['a', 'b']) prefs = applyVerdict(prefs, msg(id, { from: { name: '', email: 'promo@shop.com' } }), 'not', NOW)
+    prefs = applyVerdict(prefs, msg('c', { from: { name: '', email: 'ana@x.com' } }), 'important', NOW)
+    expect(learnedRules(prefs, [])).toMatchObject([{ from: 'promo@shop.com', importance: 'hide', source: 'learned' }])
+    expect(learnedRules(prefs, [{ id: 'x', from: 'promo@shop.com', importance: 'normal', source: 'you' }])).toEqual([])
+  })
+
+  it('sends the AI only senders and subjects, and keeps new proposals', () => {
+    const ranked = rankMail([msg('a', { snippet: 'secret body text' }), msg('b', { from: { name: 'Shop', email: 'deals@shop.com' }, bulk: true })], EMPTY_PREFS, NOW)
+    const prompt = rulesPrompt(senderStats(ranked, EMPTY_PREFS), [])
+    expect(prompt).toContain('deals@shop.com | Shop | 1')
+    expect(prompt).not.toContain('secret body text')
+    const existing = normalizeRules([{ id: 'x', from: '@shop.com', importance: 'hide', source: 'you' }])
+    expect(parseProposedRules({ rules: [{ from: '@shop.com', importance: 'hide' }, { from: 'ana@client.com', importance: 'important', note: 'Client' }, { from: 'x' }] }, existing, 'ai:')).toEqual([
+      { id: 'ai:1', from: 'ana@client.com', importance: 'important', note: 'Client', source: 'ai' }
+    ])
+  })
+
+  it('proposes rules through the user’s AI', async () => {
+    const dir = tempDir()
+    const accounts = { recentMail: async () => ({ items: [msg('a')], problems: [] }), readOnly: () => [] } as unknown as AccountService
+    const ai = { ask: async () => ({ text: '{"rules":[{"from":"ana@client.com","importance":"important"}]}', searched: [] }) }
+    const service = new MailService(dir, accounts, new SecretStore(dir, plain), fetch, () => NOW, () => ai)
+    expect(await service.proposeRules(DEFAULT_SETTINGS)).toMatchObject([{ from: 'ana@client.com', importance: 'important', source: 'ai' }])
+    const r = await service.load({ ...DEFAULT_SETTINGS, mailRules: normalizeRules([{ id: '1', from: 'ana@client.com', category: 'fyi', source: 'you' }]) })
+    expect(r.items[0].kind).toBe('fyi')
   })
 })

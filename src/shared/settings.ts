@@ -1,5 +1,5 @@
 import { normalizeSite, PROJECT_WEIGHTS, type JiraSite, type ProjectWeight, type TicketRanking } from './jira'
-import type { MailRanking } from './mail'
+import { normalizeRules, type MailRanking, type MailRule } from './mail'
 import { DEFAULT_FACT_CHECK, normalizeFactCheck, type FactCheckSettings } from './factcheck'
 import { LEANS, type Source } from './news'
 import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
@@ -29,6 +29,8 @@ export interface Settings {
   ticketRanking: TicketRanking
   /** 'jev' sends the sender, subject and preview of top mail to TypeSafe AI; 'local' never sends anything. */
   mailRanking: MailRanking
+  /** Mail rules the user approved; they sync, and run on each computer. */
+  mailRules: MailRule[]
   /** Which AI checks facts. Its keys live in the OS keychain, not here. */
   factCheck: FactCheckSettings,
   /** Folder shared between this user's computers (iCloud Drive, Dropbox…); empty means no sync. Never synced itself. */
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   projectWeights: {},
   ticketRanking: 'local',
   mailRanking: 'local',
+  mailRules: [],
   factCheck: DEFAULT_FACT_CHECK,
   syncFolder: ''
 }
@@ -108,6 +111,7 @@ export function normalizeSettings(raw: unknown): Settings {
     ) as Record<string, ProjectWeight>,
     ticketRanking: r.ticketRanking === 'jev' ? 'jev' : 'local',
     mailRanking: r.mailRanking === 'jev' ? 'jev' : 'local',
+    mailRules: normalizeRules(r.mailRules),
     factCheck: normalizeFactCheck(r.factCheck),
     // Only absolute paths (macOS/Linux or a Windows drive).
     syncFolder: typeof r.syncFolder === 'string' && /^(\/|[A-Za-z]:[\\/])/.test(r.syncFolder) ? r.syncFolder : ''
