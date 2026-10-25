@@ -36,6 +36,37 @@ export interface MailMessage {
   receivedAt: string
   unread: boolean
   webUrl?: string
+  /** Provider's conversation id, for opening the whole thread. */
+  threadId?: string
+  /** How the account's address appears: in To, only in Cc, or not at all (lists, Bcc). */
+  addressed?: 'to' | 'cc' | 'none'
+  /** Sent through a mailing list or as bulk mail (List-Id, List-Unsubscribe, Precedence: bulk). */
+  bulk?: boolean
+  /** Gmail's inbox tab; other providers leave it out. */
+  category?: 'primary' | 'promotions' | 'social' | 'updates' | 'forums'
+  /** Starred in Gmail, flagged over IMAP. */
+  starred?: boolean
+  /** Gmail's own importance marker. */
+  providerImportant?: boolean
+  /** The List-Unsubscribe header as sent. */
+  unsubscribe?: string
+}
+
+/** One message in full, for reading inside the app. */
+export interface MailBody {
+  id: string
+  accountId: string
+  from: { name: string; email: string }
+  to: string
+  cc: string
+  subject: string
+  receivedAt: string
+  /** The HTML part when there is one; shown sandboxed with remote images off. */
+  html: string
+  /** The plain-text part, or text made from the HTML. */
+  text: string
+  /** File names of attachments. */
+  attachments: string[]
 }
 
 export interface CalendarEvent {
@@ -49,6 +80,19 @@ export interface CalendarEvent {
   /** Online meeting link (Teams, Meet, Zoom). */
   joinUrl?: string
   webUrl?: string
+}
+
+/** Where `email` appears among the To and Cc addresses. */
+export function addressedIn(to: string, cc: string, email: string): 'to' | 'cc' | 'none' {
+  const me = email.trim().toLowerCase()
+  if (!me) return 'none'
+  const has = (list: string): boolean => list.toLowerCase().split(/[,;<>\s"]+/).includes(me)
+  return has(to) ? 'to' : has(cc) ? 'cc' : 'none'
+}
+
+/** True when headers say the message came through a list or as bulk mail. */
+export function isBulk(h: { listId?: string; listUnsubscribe?: string; precedence?: string }): boolean {
+  return !!h.listId?.trim() || !!h.listUnsubscribe?.trim() || /^(bulk|list|junk)$/i.test(h.precedence?.trim() ?? '')
 }
 
 export const providerLabel = (p: Provider): string => PROVIDERS.find((x) => x.provider === p)?.label ?? p

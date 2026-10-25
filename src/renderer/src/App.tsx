@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { applyTheme } from './theme'
-import { CalendarView, MailView } from './AccountViews'
+import { CalendarView } from './AccountViews'
+import { MailView } from './MailView'
 import { DashboardView } from './DashboardView'
 import { Icon } from './Icon'
 import { NewsView } from './NewsView'

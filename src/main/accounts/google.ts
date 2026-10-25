@@ -1,4 +1,4 @@
-import type { Account, CalendarEvent, MailMessage } from '../../shared/accounts'
+import { addressedIn, isBulk, type Account, type CalendarEvent, type MailBody, type MailMessage } from '../../shared/accounts'
 import { USER_AGENT } from '../../shared/polite-fetch'
 import { AuthExpiredError, type Connector } from './connector'
 import {
@@ -47,6 +47,8 @@ export function parseGmailMessage(json: unknown, account: Account): MailMessage 
   const labels = Array.isArray(j.labelIds) ? j.labelIds : []
   const ms = Number(j.internalDate)
   const thread = typeof j.threadId === 'string' ? j.threadId : j.id
+  const category = (['promotions', 'social', 'updates', 'forums'] as const).find((c) => labels.includes(`CATEGORY_${c.toUpperCase()}`))
+  const unsubscribe = header('list-unsubscribe')
   return {
     id: `${account.id}/${j.id}`,
     accountId: account.id,
@@ -55,7 +57,46 @@ export function parseGmailMessage(json: unknown, account: Account): MailMessage 
     snippet: decode(typeof j.snippet === 'string' ? j.snippet : ''),
     receivedAt: new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.parse(header('date')) || 0).toISOString(),
     unread: labels.includes('UNREAD'),
-    webUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(account.email)}#all/${thread}`
+    webUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(account.email)}#all/${thread}`,
+    threadId: thread,
+    addressed: addressedIn(header('to'), header('cc'), account.email),
+    bulk: isBulk({ listId: header('list-id'), listUnsubscribe: unsubscribe, precedence: header('precedence') }),
+    category: category ?? (labels.includes('CATEGORY_PERSONAL') ? 'primary' : undefined),
+    starred: labels.includes('STARRED'),
+    providerImportant: labels.includes('IMPORTANT'),
+    ...(unsubscribe ? { unsubscribe } : {})
+  }
+}
+
+type GPart = { mimeType?: string; filename?: string; headers?: { name?: string; value?: string }[]; body?: { data?: string; attachmentId?: string }; parts?: GPart[] }
+
+/** A Gmail messages.get answer in full format: headers, the HTML and plain-text parts, attachment names. */
+export function parseGmailBody(json: unknown, account: Account): MailBody | null {
+  const j = json as { id?: unknown; internalDate?: unknown; payload?: GPart }
+  if (typeof j?.id !== 'string' || !j.payload) return null
+  const header = (name: string): string => j.payload?.headers?.find((h) => h.name?.toLowerCase() === name)?.value ?? ''
+  let html = ''
+  let text = ''
+  const attachments: string[] = []
+  const walk = (p: GPart): void => {
+    if (p.filename) attachments.push(p.filename)
+    else if (p.body?.data && p.mimeType === 'text/html' && !html) html = Buffer.from(p.body.data, 'base64url').toString('utf8')
+    else if (p.body?.data && p.mimeType === 'text/plain' && !text) text = Buffer.from(p.body.data, 'base64url').toString('utf8')
+    p.parts?.forEach(walk)
+  }
+  walk(j.payload)
+  const ms = Number(j.internalDate)
+  return {
+    id: `${account.id}/${j.id}`,
+    accountId: account.id,
+    from: parseAddress(header('from')),
+    to: header('to'),
+    cc: header('cc'),
+    subject: header('subject') || '(no subject)',
+    receivedAt: new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.parse(header('date')) || 0).toISOString(),
+    html,
+    text,
+    attachments
   }
 }
 
@@ -237,10 +278,18 @@ export class GoogleConnector implements Connector {
     const list = await this.api<{ messages?: { id: string }[] }>(account, `${GMAIL}/messages?labelIds=INBOX&maxResults=${limit}`)
     const ids = (list.messages ?? []).map((m) => m.id)
     const fields = 'id,threadId,labelIds,snippet,internalDate,payload/headers'
-    const msgs = await mapLimit(ids, 5, (id) =>
-      this.api<unknown>(account, `${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&fields=${encodeURIComponent(fields)}`)
-    )
+    const headers = ['From', 'To', 'Cc', 'Subject', 'Date', 'List-Id', 'List-Unsubscribe', 'Precedence'].map((h) => `metadataHeaders=${h}`).join('&')
+    const msgs = await mapLimit(ids, 5, (id) => this.api<unknown>(account, `${GMAIL}/messages/${id}?format=metadata&${headers}&fields=${encodeURIComponent(fields)}`))
     return msgs.map((m) => parseGmailMessage(m, account)).filter((m): m is MailMessage => m !== null)
+  }
+
+  /** `id` is the app's message id, `<account id>/<Gmail id>`. */
+  async message(account: Account, id: string): Promise<MailBody> {
+    const gid = id.slice(id.lastIndexOf('/') + 1)
+    if (!/^[\w-]+$/.test(gid)) throw new Error('Unknown message')
+    const body = parseGmailBody(await this.api<unknown>(account, `${GMAIL}/messages/${gid}?format=full`), account)
+    if (!body) throw new Error('Gmail sent an empty message.')
+    return body
   }
 
   async events(account: Account, fromISO: string, toISO: string): Promise<CalendarEvent[]> {

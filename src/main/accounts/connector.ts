@@ -1,4 +1,4 @@
-import type { Account, CalendarEvent, MailMessage, Provider } from '../../shared/accounts'
+import type { Account, CalendarEvent, MailBody, MailMessage, Provider } from '../../shared/accounts'
 
 /** One mail/calendar provider. The service calls only the accounts whose switches are on. */
 export interface Connector {
@@ -10,6 +10,8 @@ export interface Connector {
   /** Signs in again to grant what a switch now needs, such as calendar access. */
   reconsent?(account: Account): Promise<Account>
   recentMail(account: Account, limit: number): Promise<MailMessage[]>
+  /** One message in full, by the id recentMail gave it. */
+  message?(account: Account, id: string): Promise<MailBody>
   events(account: Account, fromISO: string, toISO: string): Promise<CalendarEvent[]>
 }
 

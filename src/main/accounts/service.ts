@@ -1,4 +1,4 @@
-import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailMessage, type Provider } from '../../shared/accounts'
+import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailBody, type MailMessage, type Provider } from '../../shared/accounts'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountFeed } from '../../shared/api'
 import type { AccountStore } from './store'
@@ -91,9 +91,24 @@ export class AccountService {
     return { lists, problems }
   }
 
-  async recentMail(limit = 30): Promise<AccountFeed<MailMessage>> {
-    const { lists, problems } = await this.gather('mail', MAIL_TTL, (a) => a.mail, (c, a) => c.recentMail(a, limit))
+  /** Newest inbox mail: up to `perAccount` from each account, `limit` in all. `force` skips the cache. */
+  async recentMail(limit = 30, perAccount = limit, force = false): Promise<AccountFeed<MailMessage>> {
+    if (force) for (const k of [...this.cache.keys()]) if (k.startsWith('mail:')) this.cache.delete(k)
+    const { lists, problems } = await this.gather('mail', MAIL_TTL, (a) => a.mail, (c, a) => c.recentMail(a, perAccount))
     return { items: mergeMail(lists, limit), problems }
+  }
+
+  async message(accountId: string, id: string): Promise<MailBody> {
+    const account = this.store.get(accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.message) throw new Error('This account can’t open messages in the app yet.')
+    try {
+      return await c.message(account, id)
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
   }
 
   /** Events from now until `days` days ahead. */

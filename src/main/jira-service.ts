@@ -19,6 +19,7 @@ import {
 import type { Settings } from '../shared/settings'
 import { USER_AGENT } from '../shared/polite-fetch'
 import type { SecretStore } from './secrets'
+import { askJev, JEV_SECRET } from './jev'
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -27,9 +28,8 @@ const CACHE_MS = 5 * 60_000
 const MAX_TICKETS = 300
 /** Jev scores the top tickets only, and only ones it hasn't seen in this state. */
 const JEV_TOP = 30
-export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 export const jiraSecret = (siteId: string): string => `jira:${siteId}`
-export const JEV_SECRET = 'jev'
+export { JEV_SECRET, JEV_URL } from './jev'
 
 export class JiraError extends Error {
   constructor(
@@ -181,18 +181,9 @@ export class JiraService {
       await Promise.all(
         todo.slice(i, i + 4).map(async (t) => {
           try {
-            const res = await this.fetchFn(JEV_URL, {
-              method: 'POST',
-              headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-              body: JSON.stringify({ model: 'jev-latest', state: jevState(t), questions: JEV_QUESTIONS }),
-              signal: AbortSignal.timeout(20_000)
-            })
-            if (res.status === 401) throw new Error('TypeSafe AI refused the API key.')
-            if (res.status === 429) throw new Error('TypeSafe AI asked us to slow down.')
-            if (!res.ok) throw new Error(`TypeSafe AI answered ${res.status}.`)
-            this.jevCache[t.id] = { ...parseJev(await res.json()), updated: t.updated }
+            this.jevCache[t.id] = { ...parseJev(await askJev(this.fetchFn, key, jevState(t), JEV_QUESTIONS)), updated: t.updated }
           } catch (e) {
-            failed ||= (e as Error).name === 'TimeoutError' ? 'TypeSafe AI did not answer in time.' : (e as Error).message
+            failed ||= (e as Error).message
           }
         })
       )

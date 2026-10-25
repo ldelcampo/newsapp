@@ -12,6 +12,7 @@ import { googleClient } from './accounts/google-client'
 import { ImapConnector, testImap } from './accounts/imap'
 import { MICROSOFT_CLIENT_ID, MicrosoftConnector, MsalTokens } from './accounts/microsoft'
 import { AccountService } from './accounts/service'
+import { MailService } from './mail-service'
 import { AccountStore, type Cipher } from './accounts/store'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
@@ -33,6 +34,7 @@ let jira: JiraService
 let factCheck: FactCheckService
 let sync: SettingsSync
 let accounts: AccountService
+let mail: MailService
 const widgets = new WidgetService()
 
 function createWindow(): void {
@@ -165,6 +167,7 @@ app.whenReady().then(() => {
     google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) }),
     imap: new ImapConnector(accountStore)
   })
+  mail = new MailService(app.getPath('userData'), accounts, tokens)
 
   ipcMain.handle('settings:get', () => store.load())
   ipcMain.handle('settings:save', async (_e, next: unknown) => {
@@ -291,7 +294,11 @@ app.whenReady().then(() => {
     const { caldavUrl: _found, ...result } = await testImap(input)
     return result
   })
-  ipcMain.handle('accounts:mail', () => accounts.recentMail())
+  ipcMain.handle('accounts:mail', (_e, force: unknown) => mail.load(store.load(), force === true))
+  ipcMain.handle('mail:body', (_e, a: unknown, m: unknown) => accounts.message(id(a), id(m)))
+  ipcMain.handle('mail:feedback', (_e, m: unknown, verdict: unknown) => mail.feedback(id(m), verdict === 'important' || verdict === 'not' ? verdict : null))
+  ipcMain.handle('mail:learned', () => mail.learned())
+  ipcMain.handle('mail:reset-feedback', () => mail.resetFeedback())
   ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),
