@@ -91,6 +91,8 @@ export interface HubApi {
   hasJevKey(): Promise<boolean>
   /** An empty key removes it. Returns whether a key is stored. */
   setJevKey(key: string): Promise<boolean>
+  /** Account types this build can connect (Microsoft needs an app registration). */
+  accountProviders(): Promise<Provider[]>
   /** Connected mail and calendar accounts. */
   accounts(): Promise<Account[]>
   /** Signs in (Microsoft, Google) or checks the typed details (IMAP), then saves the account. */

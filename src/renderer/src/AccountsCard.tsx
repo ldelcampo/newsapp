@@ -13,7 +13,9 @@ export function AccountsCard(): React.JSX.Element {
   // The IMAP form is open for a new account, or for a new password on an existing one.
   const [imapFor, setImapFor] = useState<'new' | Account | null>(null)
 
+  const [providers, setProviders] = useState<Provider[]>([])
   useEffect(() => void window.hub.accounts().then(setAccounts), [])
+  useEffect(() => void window.hub.accountProviders().then(setProviders), [])
 
   const run = async (key: string, waiting: string, task: () => Promise<string>): Promise<void> => {
     setBusy(key)
@@ -109,6 +111,11 @@ export function AccountsCard(): React.JSX.Element {
         />
       )}
       <div className="actions add-account">
+        {providers.includes('microsoft') && (
+          <button type="button" className="ghost" disabled={!!busy} onClick={() => void add('microsoft')}>
+            <Icon name="plus" /> {busy === 'add:microsoft' ? 'Waiting for Microsoft…' : 'Add Microsoft account'}
+          </button>
+        )}
         <button type="button" className="ghost" disabled={!!busy} onClick={() => void add('google')}>
           <Icon name="plus" /> {busy === 'add:google' ? 'Waiting for Google…' : 'Add Google account'}
         </button>

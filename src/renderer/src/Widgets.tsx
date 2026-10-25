@@ -4,6 +4,8 @@ import { filterArticles } from '@shared/ranking'
 import type { Settings } from '@shared/settings'
 import { CURRENCIES, type Place, type Rates, type Weather, type Widget, type WidgetSize } from '@shared/widgets'
 import { ArticleList, ArticleSkeleton } from './ArticleList'
+import { ConnectPrompt, EventList, MailList, NextMeeting, Problems, useNow } from './Inbox'
+import { useAccounts, useEvents, useMail } from './useAccounts'
 import { Icon } from './Icon'
 import { NewsStatus } from './NewsStatus'
 import { TicketList, TicketStatus, useTickets } from './Tickets'
@@ -14,7 +16,7 @@ export interface WidgetContext {
   news: NewsResult | null
   loading: boolean
   reload: () => void
-  onOpen: (view: 'news' | 'settings' | 'work') => void
+  onOpen: (view: 'news' | 'settings' | 'work' | 'mail' | 'calendar') => void
 }
 
 /** Runs an async load whenever `key` changes; keeps the last result while reloading. */
@@ -219,15 +221,6 @@ function WeatherCard({ widget }: { widget: Extract<Widget, { type: 'weather' }> 
   )
 }
 
-function useNow(everyMs: number): Date {
-  const [now, setNow] = useState(() => new Date())
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), everyMs)
-    return () => clearInterval(t)
-  }, [everyMs])
-  return now
-}
-
 export const cityOf = (zone: string): string => zone.split('/').pop()!.replace(/_/g, ' ')
 
 /** Hours and minutes in a zone, with the separator as its own part so it can blink. */
@@ -285,24 +278,85 @@ export function WidgetBody({ widget, ctx }: { widget: Widget; ctx: WidgetContext
     case 'clocks':
       return <Clocks widget={widget} />
     case 'meetings':
-      return (
-        <>
-          <h2>
-            <Icon name="calendar" /> Next meetings
-          </h2>
-          <p className="muted">Connect a calendar to see your day here. Arrives with accounts.</p>
-        </>
-      )
+      return <Meetings ctx={ctx} size={widget.size} />
     case 'mail':
-      return (
-        <>
-          <h2>
-            <Icon name="mail" /> Mail that needs you
-          </h2>
-          <p className="muted">Connect Gmail, Microsoft or IONOS mail to see priority messages here. Arrives with accounts.</p>
-        </>
-      )
+      return <Mail ctx={ctx} size={widget.size} />
   }
+}
+
+const MAIL_COUNT: Record<WidgetSize, number> = { small: 3, medium: 5, wide: 6 }
+
+function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JSX.Element {
+  const { accounts } = useAccounts()
+  const { feed, error } = useMail()
+  const withMail = accounts?.filter((a) => a.mail) ?? []
+  const unread = feed?.items.filter((m) => m.unread).length ?? 0
+  return (
+    <>
+      <header className="card-head">
+        <h2>
+          <Icon name="mail" /> Recent mail
+          {unread > 0 && <span className="count">{unread} unread</span>}
+        </h2>
+        {withMail.length > 0 && (
+          <button className="link" onClick={() => ctx.onOpen('mail')}>
+            All mail <Icon name="arrow" />
+          </button>
+        )}
+      </header>
+      {accounts && withMail.length === 0 ? (
+        <ConnectPrompt what="mail" onOpen={() => ctx.onOpen('settings')} />
+      ) : !feed && !error ? (
+        <ArticleSkeleton rows={MAIL_COUNT[size]} />
+      ) : (
+        <>
+          {error && <p className="error small">Couldn’t load mail: {error}</p>}
+          {feed && feed.items.length === 0 && <p className="muted">Your inbox is empty.</p>}
+          {feed && <MailList mail={feed.items.slice(0, MAIL_COUNT[size])} accounts={withMail} compact={size === 'small'} />}
+          {feed && <Problems problems={feed.problems} />}
+        </>
+      )}
+    </>
+  )
+}
+
+function Meetings({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JSX.Element {
+  const { accounts } = useAccounts()
+  const { feed, error } = useEvents()
+  // Every 15 s, so the countdown never lags by more than a moment.
+  const now = useNow(15_000)
+  const withCalendar = accounts?.filter((a) => a.calendar) ?? []
+  const nowISO = now.toISOString()
+  const upcoming = (feed?.items ?? []).filter((e) => e.end > nowISO)
+  const next = upcoming.find((e) => !e.allDay)
+  const rest = upcoming.filter((e) => e !== next)
+  return (
+    <>
+      <header className="card-head">
+        <h2>
+          <Icon name="calendar" /> Next meetings
+        </h2>
+        {withCalendar.length > 0 && (
+          <button className="link" onClick={() => ctx.onOpen('calendar')}>
+            Calendar <Icon name="arrow" />
+          </button>
+        )}
+      </header>
+      {accounts && withCalendar.length === 0 ? (
+        <ConnectPrompt what="calendar" onOpen={() => ctx.onOpen('settings')} />
+      ) : !feed && !error ? (
+        <ArticleSkeleton rows={2} />
+      ) : (
+        <>
+          {error && <p className="error small">Couldn’t load your calendar: {error}</p>}
+          {feed && upcoming.length === 0 && <p className="muted">Nothing on your calendar this week.</p>}
+          {next && <NextMeeting e={next} now={now} accounts={withCalendar} />}
+          {size !== 'small' && rest.length > 0 && <EventList events={rest} accounts={withCalendar} now={now} limit={size === 'wide' ? 6 : 3} />}
+          {feed && <Problems problems={feed.problems} />}
+        </>
+      )}
+    </>
+  )
 }
 
 // ---------- Options shown while customizing ----------

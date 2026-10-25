@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { applyTheme } from './theme'
+import { CalendarView, MailView } from './AccountViews'
 import { DashboardView } from './DashboardView'
 import { Icon } from './Icon'
 import { NewsView } from './NewsView'
@@ -13,8 +14,8 @@ const VIEWS: { id: View; label: string; comingIn?: string }[] = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'work', label: 'Work' },
   { id: 'news', label: 'News' },
-  { id: 'mail', label: 'Mail', comingIn: 'Microsoft, Gmail and IONOS mail arrive in slices 5 to 7.' },
-  { id: 'calendar', label: 'Calendar', comingIn: 'Calendars arrive with their accounts in slices 5 to 7.' },
+  { id: 'mail', label: 'Mail' },
+  { id: 'calendar', label: 'Calendar' },
   { id: 'settings', label: 'Settings' }
 ]
 
@@ -47,6 +48,8 @@ export function App(): React.JSX.Element {
     if (view === 'dashboard') return <DashboardView onOpen={setView} />
     if (view === 'news') return <NewsView />
     if (view === 'work') return <WorkView onOpen={setView} />
+    if (view === 'mail') return <MailView onAdd={() => setView('settings')} />
+    if (view === 'calendar') return <CalendarView onAdd={() => setView('settings')} />
     return <SettingsView />
   }
 
