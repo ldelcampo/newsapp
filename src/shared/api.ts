@@ -1,6 +1,7 @@
 import type { TicketResult } from './jira'
 import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
-import type { Account, CalendarEvent, ConnectionTest, MailMessage, Provider } from './accounts'
+import type { Account, CalendarEvent, ConnectionTest, MailAction, MailBody, MailDraft, Provider } from './accounts'
+import type { MailResult, MailSummary, ReplyIdea, SnoozeOption, Verdict } from './mail'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -103,8 +104,32 @@ export interface HubApi {
   removeAccount(id: string): Promise<void>
   /** Checks IMAP and SMTP logins and looks for a calendar, without saving anything. */
   testImap(input: unknown): Promise<ConnectionTest>
-  /** Newest inbox mail across accounts with mail switched on (cached for 2 minutes). */
-  recentMail(): Promise<AccountFeed<MailMessage>>
+  /** Inbox mail across accounts with mail switched on, ranked by what needs the user (cached for 2 minutes unless forced). */
+  recentMail(force?: boolean): Promise<MailResult>
+  /** One message in full, for reading in the app. Doesn't mark it as read. */
+  mailBody(accountId: string, id: string): Promise<MailBody>
+  /** Teaches the ranking that a message (and its sender) is important or not; null takes it back. */
+  mailFeedback(id: string, verdict: Verdict | null): Promise<void>
+  /** Archive, trash, read/unread or star messages at their providers. */
+  mailAct(ids: string[], action: MailAction): Promise<void>
+  /** Hides a message until later; null brings it back now. Returns when it comes back. */
+  mailSnooze(id: string, option: SnoozeOption | null): Promise<string | null>
+  /** Sends new mail or a reply (Gmail through the API, other accounts through SMTP with a copy in Sent). */
+  mailSend(draft: MailDraft): Promise<void>
+  /** To, Cc and subject for a reply; `all` keeps the Cc list. */
+  mailReplyDraft(accountId: string, id: string, all: boolean): Promise<Omit<MailDraft, 'text'>>
+  /** Three short replies from the AI chosen under Fact checking. Sends this message to it. */
+  mailReplyIdeas(accountId: string, id: string): Promise<{ ideas: ReplyIdea[]; draft: Omit<MailDraft, 'text'> }>
+  /** A short summary from the AI chosen under Fact checking. Sends this message to it. */
+  mailSummary(accountId: string, id: string): Promise<MailSummary>
+  /** Unsubscribes in one step when the sender allows it; otherwise returns the page to open. */
+  mailUnsubscribe(accountId: string, id: string): Promise<{ done: true; how: string } | { open: string }>
+  /** Creates a Jira task from a message, assigned to the user. */
+  mailTask(accountId: string, id: string, task: { siteId: string; projectKey: string; summary: string }): Promise<{ key: string; url: string }>
+  /** How many senders the ranking has learned about. */
+  mailLearned(): Promise<number>
+  /** Forgets everything the user taught the mail ranking. */
+  resetMailFeedback(): Promise<void>
   /** Events from today through the next 7 days, across accounts with calendar switched on (cached for 5 minutes). */
   upcomingEvents(): Promise<AccountFeed<CalendarEvent>>
   getUpdate(): Promise<UpdateState>

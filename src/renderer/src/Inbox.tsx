@@ -1,27 +1,56 @@
 import { useEffect, useState } from 'react'
-import { meetingPhase, type Account, type CalendarEvent, type MailMessage } from '@shared/accounts'
+import { meetingPhase, type Account, type CalendarEvent } from '@shared/accounts'
+import type { MailUrgency, RankedMail, Verdict } from '@shared/mail'
 import { Icon } from './Icon'
 import { timeAgo } from './useNews'
 
 /** Which account an item came from, shown only when more than one account is connected. */
-function AccountTag({ accounts, id }: { accounts: Account[]; id: string }): React.JSX.Element | null {
+export function AccountTag({ accounts, id }: { accounts: Account[]; id: string }): React.JSX.Element | null {
   if (accounts.length < 2) return null
   const a = accounts.find((x) => x.id === id)
   return a ? <span className={`acct acct-${a.provider}`}>{a.email || a.name}</span> : null
 }
 
-export function MailList({ mail, accounts, compact = false }: { mail: MailMessage[]; accounts: Account[]; compact?: boolean }): React.JSX.Element {
+const URGENCY_LABEL: Record<MailUrgency, string> = { now: 'Needs you today', soon: 'Soon', later: 'Later' }
+
+export function MailList({
+  mail,
+  accounts,
+  compact = false,
+  selected,
+  onSelect,
+  onVerdict,
+  actions
+}: {
+  mail: RankedMail[]
+  accounts: Account[]
+  compact?: boolean
+  selected?: string
+  /** Opens a message in the reader; without it, subjects open the provider's site. */
+  onSelect?: (m: RankedMail) => void
+  onVerdict?: (m: RankedMail, verdict: Verdict | null) => void
+  /** Buttons shown on hover, such as archive and snooze. */
+  actions?: (m: RankedMail) => React.ReactNode
+}): React.JSX.Element {
   return (
     <ol className={`mail ${compact ? 'compact' : ''}`}>
       {mail.map((m, i) => (
-        <li key={`${m.accountId}:${m.id}`} className={m.unread ? 'unread' : ''} style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
-          <span className="dot" aria-label={m.unread ? 'Unread' : undefined} />
+        <li
+          key={`${m.accountId}:${m.id}`}
+          className={`urgency-${m.urgency} ${m.unread ? 'unread' : ''} ${selected === m.id ? 'selected' : ''}`}
+          style={{ '--i': Math.min(i, 12) } as React.CSSProperties}
+        >
+          <span className="urgency-dot" title={URGENCY_LABEL[m.urgency]} aria-label={`${URGENCY_LABEL[m.urgency]}${m.unread ? ', unread' : ''}`} />
           <div className="mail-body">
             <div className="mail-top">
               <span className="from">{m.from.name || m.from.email}</span>
               <span className="muted small">{timeAgo(m.receivedAt)}</span>
             </div>
-            {m.webUrl ? (
+            {onSelect ? (
+              <button className="article-link subject" onClick={() => onSelect(m)}>
+                {m.subject}
+              </button>
+            ) : m.webUrl ? (
               <button className="article-link subject" onClick={() => void window.hub.openExternal(m.webUrl!)}>
                 {m.subject}
               </button>
@@ -29,11 +58,48 @@ export function MailList({ mail, accounts, compact = false }: { mail: MailMessag
               <span className="subject">{m.subject}</span>
             )}
             {!compact && m.snippet && <p className="summary">{m.snippet}</p>}
-            <AccountTag accounts={accounts} id={m.accountId} />
+            <div className="meta">
+              {m.reasons.slice(0, compact ? 1 : 3).map((r) => (
+                <span key={r} className="reason">
+                  {r}
+                </span>
+              ))}
+              <AccountTag accounts={accounts} id={m.accountId} />
+            </div>
           </div>
+          {(onVerdict || actions) && (
+            <div className="mail-side">
+              {actions?.(m)}
+              {onVerdict && <VerdictButtons m={m} onVerdict={onVerdict} />}
+            </div>
+          )}
         </li>
       ))}
     </ol>
+  )
+}
+
+/** "Important" and "Not important": they teach the ranking about this sender too. Pressing again takes it back. */
+export function VerdictButtons({ m, onVerdict }: { m: RankedMail; onVerdict: (m: RankedMail, v: Verdict | null) => void }): React.JSX.Element {
+  return (
+    <div className="mail-verdict" role="group" aria-label="Teach the ranking">
+      <button
+        className={m.verdict === 'important' ? 'chip on' : 'chip'}
+        aria-pressed={m.verdict === 'important'}
+        title="Important: rank this and more mail from this sender higher"
+        onClick={() => onVerdict(m, m.verdict === 'important' ? null : 'important')}
+      >
+        <Icon name="up" /> <span className="label">Important</span>
+      </button>
+      <button
+        className={m.verdict === 'not' ? 'chip on' : 'chip'}
+        aria-pressed={m.verdict === 'not'}
+        title="Not important: rank this and more mail from this sender lower"
+        onClick={() => onVerdict(m, m.verdict === 'not' ? null : 'not')}
+      >
+        <Icon name="down" /> <span className="label">Not important</span>
+      </button>
+    </div>
   )
 }
 

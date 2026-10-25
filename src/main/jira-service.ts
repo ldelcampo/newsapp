@@ -19,6 +19,7 @@ import {
 import type { Settings } from '../shared/settings'
 import { USER_AGENT } from '../shared/polite-fetch'
 import type { SecretStore } from './secrets'
+import { askJev, JEV_SECRET } from './jev'
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -27,9 +28,8 @@ const CACHE_MS = 5 * 60_000
 const MAX_TICKETS = 300
 /** Jev scores the top tickets only, and only ones it hasn't seen in this state. */
 const JEV_TOP = 30
-export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 export const jiraSecret = (siteId: string): string => `jira:${siteId}`
-export const JEV_SECRET = 'jev'
+export { JEV_SECRET, JEV_URL } from './jev'
 
 export class JiraError extends Error {
   constructor(
@@ -181,18 +181,9 @@ export class JiraService {
       await Promise.all(
         todo.slice(i, i + 4).map(async (t) => {
           try {
-            const res = await this.fetchFn(JEV_URL, {
-              method: 'POST',
-              headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-              body: JSON.stringify({ model: 'jev-latest', state: jevState(t), questions: JEV_QUESTIONS }),
-              signal: AbortSignal.timeout(20_000)
-            })
-            if (res.status === 401) throw new Error('TypeSafe AI refused the API key.')
-            if (res.status === 429) throw new Error('TypeSafe AI asked us to slow down.')
-            if (!res.ok) throw new Error(`TypeSafe AI answered ${res.status}.`)
-            this.jevCache[t.id] = { ...parseJev(await res.json()), updated: t.updated }
+            this.jevCache[t.id] = { ...parseJev(await askJev(this.fetchFn, key, jevState(t), JEV_QUESTIONS)), updated: t.updated }
           } catch (e) {
-            failed ||= (e as Error).name === 'TimeoutError' ? 'TypeSafe AI did not answer in time.' : (e as Error).message
+            failed ||= (e as Error).message
           }
         })
       )
@@ -228,6 +219,63 @@ export class JiraService {
       problems,
       ranking: settings.ticketRanking === 'jev' && Object.keys(ai).length ? 'jev' : 'local'
     }
+  }
+
+  /**
+   * Creates a task in a project, assigned to the user when Jira allows it. Uses the project's
+   * "Task" type, else its first type that isn't a sub-task.
+   */
+  async createTask(settings: Settings, siteId: string, projectKey: string, summary: string, description: string): Promise<{ key: string; url: string }> {
+    const site = settings.jiraSites.find((s) => s.id === siteId)
+    if (!site) throw new Error('That Jira site is no longer connected.')
+    const token = this.secrets.get(jiraSecret(site.id))
+    if (!token) throw new Error(`${site.url} has no token on this computer. Connect it again in Settings.`)
+    if (!/^[A-Z][A-Z0-9_]{0,30}$/.test(projectKey)) throw new Error('Enter a project key, such as OPS.')
+    const v = site.kind === 'cloud' ? 3 : 2
+    const base = `${site.apiUrl ?? site.url}/rest/api/${v}`
+    const headers = this.headers(site, token)
+    const call = (url: string, init: RequestInit = {}): Promise<unknown> =>
+      this.call(url, { headers, ...init }, site.url).catch((e) => {
+        if (e instanceof JiraError && e.status === 403)
+          throw new JiraError(403, `Jira at ${site.url} didn’t allow creating issues. A scoped token also needs the write:jira-work scope.`)
+        throw e
+      })
+    let meta: { issueTypes?: unknown[]; values?: unknown[] }
+    try {
+      meta = (await call(`${base}/issue/createmeta/${projectKey}/issuetypes`)) as typeof meta
+    } catch (e) {
+      if (e instanceof Error && / answered 404/.test(e.message)) throw new Error(`There is no project ${projectKey} on ${site.url} that you can create issues in.`)
+      throw e
+    }
+    const types = ((meta.issueTypes ?? meta.values ?? []) as { id?: string; name?: string; subtask?: boolean }[]).filter((t) => t.id && !t.subtask)
+    const type = types.find((t) => t.name?.toLowerCase() === 'task' || t.name?.toLowerCase() === 'tarea') ?? types[0]
+    if (!type) throw new Error(`You can’t create issues in ${projectKey}.`)
+    const me = (await call(`${base}/myself`)) as { accountId?: string; name?: string }
+    const assignee = site.kind === 'cloud' ? (me.accountId ? { accountId: me.accountId } : null) : me.name ? { name: me.name } : null
+    const body = (withAssignee: boolean): string =>
+      JSON.stringify({
+        fields: {
+          project: { key: projectKey },
+          issuetype: { id: type.id },
+          summary: summary.replace(/[\r\n]+/g, ' ').slice(0, 250),
+          description:
+            site.kind === 'cloud'
+              ? { type: 'doc', version: 1, content: description.split(/\n{2,}/).filter(Boolean).map((p) => ({ type: 'paragraph', content: [{ type: 'text', text: p }] })) }
+              : description,
+          ...(withAssignee && assignee ? { assignee } : {})
+        }
+      })
+    let created: { key?: string }
+    try {
+      created = (await call(`${base}/issue`, { method: 'POST', body: body(true) })) as typeof created
+    } catch (e) {
+      // Some projects don't let people assign issues; the task still helps unassigned.
+      if (!(e instanceof Error) || !/ answered 400/.test(e.message) || !assignee) throw e
+      created = (await call(`${base}/issue`, { method: 'POST', body: body(false) })) as typeof created
+    }
+    if (!created.key) throw new Error('Jira didn’t say which issue it created.')
+    this.cache.delete(site.id)
+    return { key: created.key, url: `${site.url}/browse/${created.key}` }
   }
 
   forget(siteId: string): void {

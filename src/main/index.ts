@@ -6,12 +6,14 @@ import { makeProvider } from './ai-providers'
 import { FactCheckService } from './fact-check-service'
 import { SecretStore } from './secret-store'
 import { PROVIDERS as AI_PROVIDERS, SECRET_NAMES, SYSTEM_PROMPT, type ProviderId, type SecretName } from '../shared/factcheck'
-import { PROVIDERS, type Provider } from '../shared/accounts'
+import { MAIL_ACTIONS, normalizeDraft, PROVIDERS, type MailAction, type Provider } from '../shared/accounts'
+import { SNOOZE_OPTIONS, type SnoozeOption } from '../shared/mail'
 import { GoogleConnector } from './accounts/google'
 import { googleClient } from './accounts/google-client'
 import { ImapConnector, testImap } from './accounts/imap'
 import { MICROSOFT_CLIENT_ID, MicrosoftConnector, MsalTokens } from './accounts/microsoft'
 import { AccountService } from './accounts/service'
+import { MailService, taskDescription } from './mail-service'
 import { AccountStore, type Cipher } from './accounts/store'
 import { NewsService, testSource } from './news-service'
 import { SettingsStore } from './settings-store'
@@ -33,6 +35,7 @@ let jira: JiraService
 let factCheck: FactCheckService
 let sync: SettingsSync
 let accounts: AccountService
+let mail: MailService
 const widgets = new WidgetService()
 
 function createWindow(): void {
@@ -165,6 +168,7 @@ app.whenReady().then(() => {
     google: new GoogleConnector({ store: accountStore, client: googleClient, openBrowser: (url) => void shell.openExternal(url) }),
     imap: new ImapConnector(accountStore)
   })
+  mail = new MailService(app.getPath('userData'), accounts, tokens, undefined, undefined, () => providerFor(store.load().factCheck.provider))
 
   ipcMain.handle('settings:get', () => store.load())
   ipcMain.handle('settings:save', async (_e, next: unknown) => {
@@ -291,7 +295,36 @@ app.whenReady().then(() => {
     const { caldavUrl: _found, ...result } = await testImap(input)
     return result
   })
-  ipcMain.handle('accounts:mail', () => accounts.recentMail())
+  ipcMain.handle('accounts:mail', (_e, force: unknown) => mail.load(store.load(), force === true))
+  ipcMain.handle('mail:body', (_e, a: unknown, m: unknown) => accounts.message(id(a), id(m)))
+  ipcMain.handle('mail:feedback', (_e, m: unknown, verdict: unknown) => mail.feedback(id(m), verdict === 'important' || verdict === 'not' ? verdict : null))
+  ipcMain.handle('mail:act', (_e, ids: unknown, action: unknown) => {
+    if (!Array.isArray(ids) || !ids.length || ids.length > 200 || !MAIL_ACTIONS.includes(action as MailAction)) throw new Error('Nothing to do.')
+    return mail.act(ids.map(id), action as MailAction)
+  })
+  ipcMain.handle('mail:snooze', (_e, m: unknown, option: unknown) =>
+    mail.snooze(id(m), SNOOZE_OPTIONS.some((o) => o.value === option) ? (option as SnoozeOption) : null)
+  )
+  ipcMain.handle('mail:send', (_e, draft: unknown) => {
+    const d = normalizeDraft(draft)
+    if (typeof d === 'string') throw new Error(d)
+    return mail.send(d)
+  })
+  ipcMain.handle('mail:reply-draft', async (_e, a: unknown, m: unknown, all: unknown) => mail.replyDraft(await accounts.message(id(a), id(m)), all === true))
+  ipcMain.handle('mail:reply-ideas', (_e, a: unknown, m: unknown) => {
+    const account = accounts.list().find((x) => x.id === a)
+    return mail.replyIdeas(id(a), id(m), store.load().displayName || account?.name || account?.email || 'the recipient')
+  })
+  ipcMain.handle('mail:summary', (_e, a: unknown, m: unknown) => mail.summary(id(a), id(m)))
+  ipcMain.handle('mail:unsubscribe', (_e, a: unknown, m: unknown) => mail.unsubscribe(id(a), id(m)))
+  ipcMain.handle('mail:task', async (_e, a: unknown, m: unknown, task: unknown) => {
+    const t = (task ?? {}) as Record<string, unknown>
+    const body = await accounts.message(id(a), id(m))
+    const link = mail.loaded(id(m))?.webUrl
+    return jira.createTask(store.load(), String(t.siteId ?? ''), String(t.projectKey ?? '').trim().toUpperCase(), String(t.summary ?? '').trim() || body.subject, taskDescription(body, link))
+  })
+  ipcMain.handle('mail:learned', () => mail.learned())
+  ipcMain.handle('mail:reset-feedback', () => mail.resetFeedback())
   ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
   ipcMain.handle('app:info', () => ({
     version: app.getVersion(),

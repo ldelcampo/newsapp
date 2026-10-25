@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { guessImapSettings, normalizeAccount, normalizeImapInput } from '../src/shared/accounts'
 import { parseIcal } from '../src/shared/ical'
-import { previewPart, toSnippet } from '../src/main/accounts/imap'
+import { previewPart, specialFolder, toSnippet } from '../src/main/accounts/imap'
 
 const cal = (...events: string[]): string =>
   ['BEGIN:VCALENDAR', 'VERSION:2.0', ...events.flatMap((e) => ['BEGIN:VEVENT', ...e.trim().split('\n').map((l) => l.trim()), 'END:VEVENT']), 'END:VCALENDAR'].join('\r\n')
@@ -113,5 +113,20 @@ describe('mail previews', () => {
   it('strips HTML and quoted replies', () => {
     expect(toSnippet('<style>p{}</style><p>Hola&nbsp;Luis,</p><p>Ya quedó.</p>', true)).toBe('Hola Luis, Ya quedó.')
     expect(toSnippet('Sounds good.\n\n> On Monday you wrote:\n> old text', false)).toBe('Sounds good.')
+  })
+})
+
+describe('specialFolder', () => {
+  const client = (boxes: { path: string; name: string; specialUse?: string }[]) => {
+    const created: string[] = []
+    return { created, list: async () => boxes, mailboxCreate: async (p: string) => void created.push(p) } as never as Parameters<typeof specialFolder>[0] & { created: string[] }
+  }
+  it('prefers the special-use flag, then usual names, then creates Archive', async () => {
+    expect(await specialFolder(client([{ path: 'INBOX.Basura', name: 'Basura', specialUse: '\\Trash' }]), 'trash')).toBe('INBOX.Basura')
+    expect(await specialFolder(client([{ path: 'Papelera', name: 'Papelera' }]), 'trash')).toBe('Papelera')
+    const c = client([{ path: 'INBOX', name: 'INBOX' }])
+    expect(await specialFolder(c, 'archive')).toBe('Archive')
+    expect(c.created).toEqual(['Archive'])
+    await expect(specialFolder(client([]), 'trash')).rejects.toThrow(/no Trash/)
   })
 })

@@ -36,7 +36,91 @@ export interface MailMessage {
   receivedAt: string
   unread: boolean
   webUrl?: string
+  /** Provider's conversation id, for opening the whole thread. */
+  threadId?: string
+  /** How the account's address appears: in To, only in Cc, or not at all (lists, Bcc). */
+  addressed?: 'to' | 'cc' | 'none'
+  /** Sent through a mailing list or as bulk mail (List-Id, List-Unsubscribe, Precedence: bulk). */
+  bulk?: boolean
+  /** Gmail's inbox tab; other providers leave it out. */
+  category?: 'primary' | 'promotions' | 'social' | 'updates' | 'forums'
+  /** Starred in Gmail, flagged over IMAP. */
+  starred?: boolean
+  /** Gmail's own importance marker. */
+  providerImportant?: boolean
+  /** The List-Unsubscribe header as sent. */
+  unsubscribe?: string
 }
+
+/** What can be done to messages from the app. */
+export type MailAction = 'read' | 'unread' | 'archive' | 'trash' | 'star' | 'unstar'
+export const MAIL_ACTIONS: MailAction[] = ['read', 'unread', 'archive', 'trash', 'star', 'unstar']
+
+/** One message in full, for reading inside the app. */
+export interface MailBody {
+  id: string
+  accountId: string
+  from: { name: string; email: string }
+  to: string
+  cc: string
+  subject: string
+  receivedAt: string
+  /** The HTML part when there is one; shown sandboxed with remote images off. */
+  html: string
+  /** The plain-text part, or text made from the HTML. */
+  text: string
+  /** File names of attachments. */
+  attachments: string[]
+  /** For replies: the Message-ID, References and Reply-To headers, and the provider's thread. */
+  messageId?: string
+  references?: string
+  replyTo?: string
+  threadId?: string
+  /** List-Unsubscribe and List-Unsubscribe-Post, for unsubscribing. */
+  unsubscribe?: string
+  unsubscribePost?: string
+}
+
+/** Mail the user writes in the app: new, or a reply to `replyTo` (a message id from the inbox). */
+export interface MailDraft {
+  accountId: string
+  to: string
+  cc: string
+  subject: string
+  text: string
+  replyTo?: string
+}
+
+/** What a connector sends: a draft with the reply headers filled in. */
+export interface OutgoingMail {
+  to: string
+  cc: string
+  subject: string
+  text: string
+  inReplyTo?: string
+  references?: string
+  threadId?: string
+}
+
+const EMAIL_LIST = /^\s*([^,;\s]+@[^,;\s]+\.[^,;\s]+|[^<>,]*<[^<>\s@]+@[^<>\s]+\.[^<>\s]+>)(\s*[,;]\s*([^,;\s]+@[^,;\s]+\.[^,;\s]+|[^<>,]*<[^<>\s@]+@[^<>\s]+\.[^<>\s]+>))*\s*$/
+
+/** Checks a draft from the window; returns a message for the first problem, or the clean draft. */
+export function normalizeDraft(raw: unknown): MailDraft | string {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const s = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
+  const to = s(r.to, 2000).trim()
+  const cc = s(r.cc, 2000).trim()
+  if (!s(r.accountId, 200)) return 'Choose the account to send from.'
+  if (!EMAIL_LIST.test(to)) return 'Enter at least one valid address in To.'
+  if (cc && !EMAIL_LIST.test(cc)) return 'Check the addresses in Cc.'
+  const text = s(r.text, 200_000)
+  if (!text.trim()) return 'Write something first.'
+  const replyTo = s(r.replyTo, 500)
+  return { accountId: s(r.accountId, 200), to, cc, subject: s(r.subject, 500).replace(/[\r\n]+/g, ' ').trim(), text, ...(replyTo ? { replyTo } : {}) }
+}
+
+/** "Re: subject" once, whatever language prefix was there. */
+export const replySubject = (subject: string): string => (/^\s*(re|aw|rv|sv)\s*:/i.test(subject) ? subject : `Re: ${subject}`)
 
 export interface CalendarEvent {
   id: string
@@ -49,6 +133,19 @@ export interface CalendarEvent {
   /** Online meeting link (Teams, Meet, Zoom). */
   joinUrl?: string
   webUrl?: string
+}
+
+/** Where `email` appears among the To and Cc addresses. */
+export function addressedIn(to: string, cc: string, email: string): 'to' | 'cc' | 'none' {
+  const me = email.trim().toLowerCase()
+  if (!me) return 'none'
+  const has = (list: string): boolean => list.toLowerCase().split(/[,;<>\s"]+/).includes(me)
+  return has(to) ? 'to' : has(cc) ? 'cc' : 'none'
+}
+
+/** True when headers say the message came through a list or as bulk mail. */
+export function isBulk(h: { listId?: string; listUnsubscribe?: string; precedence?: string }): boolean {
+  return !!h.listId?.trim() || !!h.listUnsubscribe?.trim() || /^(bulk|list|junk)$/i.test(h.precedence?.trim() ?? '')
 }
 
 export const providerLabel = (p: Provider): string => PROVIDERS.find((x) => x.provider === p)?.label ?? p

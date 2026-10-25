@@ -3,14 +3,20 @@ import { ImapFlow, type FetchMessageObject, type MessageStructureObject } from '
 import { createTransport } from 'nodemailer'
 import { createDAVClient, type DAVCalendar } from 'tsdav'
 import {
+  addressedIn,
+  isBulk,
   normalizeImapInput,
   type Account,
   type CalendarEvent,
   type ConnectionTest,
   type ImapSettings,
-  type MailMessage
+  type MailAction,
+  type MailBody,
+  type MailMessage,
+  type OutgoingMail
 } from '../../shared/accounts'
 import { parseIcal } from '../../shared/ical'
+import { mailOptions, rawMessage } from './compose'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountStore } from './store'
 
@@ -64,6 +70,35 @@ export function previewPart(node: MessageStructureObject | undefined): { part: s
     return null
   }
   return walk(node) ?? html
+}
+
+/** Every displayable part of a message: the first HTML and plain-text parts, and attachment names. */
+export function bodyParts(node: MessageStructureObject | undefined): { html?: string; text?: string; attachments: string[] } {
+  const out: { html?: string; text?: string; attachments: string[] } = { attachments: [] }
+  const walk = (n: MessageStructureObject): void => {
+    if (n.childNodes?.length) return n.childNodes.forEach(walk)
+    const name = n.dispositionParameters?.filename ?? n.parameters?.name
+    if (n.disposition === 'attachment' || (name && !n.type.startsWith('text/'))) {
+      if (name) out.attachments.push(name)
+      return
+    }
+    const part = n.part || '1'
+    if (n.type === 'text/html' && !out.html) out.html = part
+    else if (n.type === 'text/plain' && !out.text) out.text = part
+  }
+  if (node) walk(node)
+  return out
+}
+
+/** Header lines from a FETCH of named headers, as lower-case name → unfolded value. */
+export function parseHeaderLines(raw: Buffer | string | undefined): Record<string, string> {
+  const out: Record<string, string> = {}
+  const text = (raw ?? '').toString().replace(/\r?\n[ \t]+/g, ' ')
+  for (const line of text.split(/\r?\n/)) {
+    const i = line.indexOf(':')
+    if (i > 0) out[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim()
+  }
+  return out
 }
 
 /** Collapses a message body to a one-line preview. */
@@ -162,9 +197,14 @@ export async function testImap(raw: unknown): Promise<ConnectionTest & { caldavU
   }
 }
 
+const addresses = (list?: { name?: string; address?: string }[]): string => (list ?? []).map((a) => a.address ?? '').join(', ')
+
 function toMessage(acc: Account, m: FetchMessageObject, snippet: string): MailMessage {
   const from = m.envelope?.from?.[0]
   const date = m.envelope?.date ?? m.internalDate
+  const h = parseHeaderLines(m.headers)
+  const login = acc.imap?.user.includes('@') ? acc.imap.user : acc.email
+  const addressed = addressedIn(addresses(m.envelope?.to), addresses(m.envelope?.cc), acc.email)
   return {
     id: `${acc.id}:${m.uid}`,
     accountId: acc.id,
@@ -172,8 +212,29 @@ function toMessage(acc: Account, m: FetchMessageObject, snippet: string): MailMe
     subject: m.envelope?.subject || '(No subject)',
     snippet,
     receivedAt: (date ? new Date(date) : new Date()).toISOString(),
-    unread: !m.flags?.has('\\Seen')
+    unread: !m.flags?.has('\\Seen'),
+    addressed: addressed === 'none' && login !== acc.email ? addressedIn(addresses(m.envelope?.to), addresses(m.envelope?.cc), login) : addressed,
+    bulk: isBulk({ listId: h['list-id'], listUnsubscribe: h['list-unsubscribe'], precedence: h.precedence }),
+    starred: !!m.flags?.has('\\Flagged'),
+    ...(h['list-unsubscribe'] ? { unsubscribe: h['list-unsubscribe'] } : {})
   }
+}
+
+const FOLDER_NAMES = {
+  sent: ['sent', 'sent items', 'sent messages', 'sent mail', 'enviados', 'elementos enviados', '[gmail]/sent mail'],
+  archive: ['archive', 'archives', 'archivo', 'archivados', 'all mail', '[gmail]/all mail'],
+  trash: ['trash', 'deleted items', 'deleted messages', 'papelera', 'elementos eliminados', 'bin']
+}
+
+/** The archive or trash folder: the one marked with that special use, else a usual name. Creates "Archive" when none exists. */
+export async function specialFolder(client: Pick<ImapFlow, 'list' | 'mailboxCreate'>, kind: 'archive' | 'trash' | 'sent'): Promise<string> {
+  const boxes = await client.list()
+  const use = { archive: '\\Archive', trash: '\\Trash', sent: '\\Sent' }[kind]
+  const found = boxes.find((b) => b.specialUse === use) ?? boxes.find((b) => FOLDER_NAMES[kind].includes(b.path.toLowerCase()) || FOLDER_NAMES[kind].includes(b.name.toLowerCase()))
+  if (found) return found.path
+  if (kind !== 'archive') throw new Error(`This mailbox has no ${kind === 'trash' ? 'Trash' : 'Sent'} folder.`)
+  await client.mailboxCreate('Archive')
+  return 'Archive'
 }
 
 /** Company and other mail over IMAP/SMTP, with the calendar over CalDAV when the provider has one. */
@@ -217,8 +278,7 @@ export class ImapConnector implements Connector {
     return { ...acc, imap: { ...acc.imap, caldavUrl: found.url } }
   }
 
-  async recentMail(acc: Account, limit: number): Promise<MailMessage[]> {
-    if (!acc.imap) return []
+  private async connect(acc: Account & { imap: ImapSettings }): Promise<ImapFlow> {
     const client = imapClient(acc.imap, this.password(acc))
     client.on('error', () => {})
     try {
@@ -228,6 +288,124 @@ export class ImapConnector implements Connector {
       if (isAuthError(e)) throw new AuthExpiredError(explain(e, acc.imap.imapHost))
       throw new Error(explain(e, acc.imap.imapHost))
     }
+    return client
+  }
+
+  /** `id` is the app's message id, `<account id>:<uid>`. Reading never marks the message as read. */
+  async message(acc: Account, id: string): Promise<MailBody> {
+    if (!acc.imap) throw new Error('This account has no mail server.')
+    const uid = id.slice(id.lastIndexOf(':') + 1)
+    if (!/^\d+$/.test(uid)) throw new Error('Unknown message')
+    const client = await this.connect(acc as Account & { imap: ImapSettings })
+    try {
+      const lock = await client.getMailboxLock('INBOX', { readOnly: true })
+      try {
+        const m = await client.fetchOne(
+          uid,
+          { uid: true, envelope: true, internalDate: true, bodyStructure: true, headers: ['references', 'list-unsubscribe', 'list-unsubscribe-post'] },
+          { uid: true }
+        )
+        if (!m) throw new Error('That message is no longer in the inbox.')
+        const parts = bodyParts(m.bodyStructure)
+        const h = parseHeaderLines(m.headers)
+        const read = async (part?: string): Promise<string> => {
+          if (!part) return ''
+          const dl = await client.download(uid, part, { uid: true, maxBytes: 2_000_000 })
+          return dl.content ? readStream(dl.content) : ''
+        }
+        const html = await read(parts.html)
+        const text = await read(parts.text)
+        const from = m.envelope?.from?.[0]
+        const date = m.envelope?.date ?? m.internalDate
+        return {
+          id,
+          accountId: acc.id,
+          from: { name: from?.name || from?.address || '', email: from?.address || '' },
+          to: addresses(m.envelope?.to),
+          cc: addresses(m.envelope?.cc),
+          subject: m.envelope?.subject || '(No subject)',
+          receivedAt: (date ? new Date(date) : new Date()).toISOString(),
+          html,
+          text: text || (html ? toSnippet(html, true, 100_000) : ''),
+          attachments: parts.attachments,
+          messageId: m.envelope?.messageId ?? '',
+          references: h.references ?? '',
+          replyTo: addresses(m.envelope?.replyTo),
+          unsubscribe: h['list-unsubscribe'] ?? '',
+          unsubscribePost: h['list-unsubscribe-post'] ?? ''
+        }
+      } finally {
+        lock.release()
+      }
+    } finally {
+      await client.logout().catch(() => client.close())
+    }
+  }
+
+  /** Sends over SMTP, then files a copy in Sent, which SMTP servers don't do themselves. */
+  async send(acc: Account, mail: OutgoingMail): Promise<void> {
+    if (!acc.imap) throw new Error('This account has no mail server.')
+    const s = acc.imap
+    const pass = this.password(acc)
+    const smtp = createTransport({
+      host: s.smtpHost,
+      port: s.smtpPort,
+      secure: s.smtpPort === 465,
+      requireTLS: s.smtpPort !== 465,
+      auth: { user: s.user, pass },
+      connectionTimeout: TIMEOUT,
+      greetingTimeout: TIMEOUT
+    })
+    try {
+      await smtp.sendMail(mailOptions(acc, mail))
+    } catch (e) {
+      if (isAuthError(e)) throw new AuthExpiredError(explain(e, s.smtpHost))
+      throw new Error(explain(e, s.smtpHost))
+    } finally {
+      smtp.close()
+    }
+    // The mail is out; a missing copy in Sent isn't worth an error.
+    const client = await this.connect(acc as Account & { imap: ImapSettings }).catch(() => null)
+    if (!client) return
+    try {
+      const sent = await specialFolder(client, 'sent')
+      await client.append(sent, await rawMessage(acc, mail), ['\\Seen'])
+    } catch {
+      // No Sent folder, or the server refused the copy.
+    } finally {
+      await client.logout().catch(() => client.close())
+    }
+  }
+
+  /** Archive and trash move to the folders the server marks as such, else to ones with the usual names. */
+  async act(acc: Account, ids: string[], action: MailAction): Promise<void> {
+    if (!acc.imap) throw new Error('This account has no mail server.')
+    const uids = ids.map((id) => id.slice(id.lastIndexOf(':') + 1))
+    if (uids.some((u) => !/^\d+$/.test(u))) throw new Error('Unknown message')
+    const range = uids.join(',')
+    const client = await this.connect(acc as Account & { imap: ImapSettings })
+    try {
+      const folder = action === 'archive' || action === 'trash' ? await specialFolder(client, action) : null
+      const lock = await client.getMailboxLock('INBOX')
+      try {
+        if (action === 'read') await client.messageFlagsAdd(range, ['\\Seen'], { uid: true })
+        if (action === 'unread') await client.messageFlagsRemove(range, ['\\Seen'], { uid: true })
+        if (action === 'star') await client.messageFlagsAdd(range, ['\\Flagged'], { uid: true })
+        if (action === 'unstar') await client.messageFlagsRemove(range, ['\\Flagged'], { uid: true })
+        if (folder) await client.messageMove(range, folder, { uid: true })
+      } finally {
+        lock.release()
+      }
+    } catch (e) {
+      throw new Error(explain(e, acc.imap.imapHost))
+    } finally {
+      await client.logout().catch(() => client.close())
+    }
+  }
+
+  async recentMail(acc: Account, limit: number): Promise<MailMessage[]> {
+    if (!acc.imap) return []
+    const client = await this.connect(acc as Account & { imap: ImapSettings })
     const messages: MailMessage[] = []
     try {
       const lock = await client.getMailboxLock('INBOX', { readOnly: true })
@@ -239,7 +417,8 @@ export class ImapConnector implements Connector {
             flags: true,
             envelope: true,
             internalDate: true,
-            bodyStructure: true
+            bodyStructure: true,
+            headers: ['list-id', 'list-unsubscribe', 'precedence']
           })
           for (const m of fetched) {
             let snippet = ''

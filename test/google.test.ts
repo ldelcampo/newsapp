@@ -62,7 +62,7 @@ describe('Google sign-in', () => {
     expect(verifier).toMatch(/^[\w-]{43}$/)
     const u = new URL(authUrl({ client, redirectUri: 'http://127.0.0.1:5000', scopes: scopesFor({ mail: true, calendar: false }), challenge, state: 's', loginHint: 'a@b.c' }))
     expect(u.origin + u.pathname).toBe('https://accounts.google.com/o/oauth2/v2/auth')
-    expect(Object.fromEntries(u.searchParams)).toMatchObject({ code_challenge: challenge, code_challenge_method: 'S256', access_type: 'offline', login_hint: 'a@b.c', scope: `openid email profile ${SCOPES.mail}` })
+    expect(Object.fromEntries(u.searchParams)).toMatchObject({ code_challenge: challenge, code_challenge_method: 'S256', access_type: 'offline', login_hint: 'a@b.c', scope: `openid email profile ${SCOPES.mail} ${SCOPES.send}` })
   })
 
   it('adds an account through the loopback redirect and keeps tokens encrypted', async () => {
@@ -139,5 +139,55 @@ describe('Gmail and Calendar', () => {
   it('throws AuthExpiredError for a missing sign-in', async () => {
     const google = new GoogleConnector({ store: newStore(), client: () => client, openBrowser: () => undefined })
     await expect(google.recentMail(account, 5)).rejects.toBeInstanceOf(AuthExpiredError)
+  })
+})
+
+describe('Gmail actions', () => {
+  const setup = (scope: string) => {
+    const store = newStore()
+    store.put(account)
+    store.setSecret(account.id, JSON.stringify({ accessToken: 'at', refreshToken: 'rt', expiresAt: Date.now() + 3_600_000, scope }))
+    const sent: { url: string; method?: string; body?: unknown }[] = []
+    const fetchFn = async (url: string, init?: RequestInit): Promise<Response> => {
+      sent.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+      return new Response(null, { status: 204 })
+    }
+    return { google: new GoogleConnector({ store, client: () => client, openBrowser: () => {}, fetchFn }), sent }
+  }
+
+  it('archives, stars and trashes with the modify scope', async () => {
+    const { google, sent } = setup(`openid ${SCOPES.mail} ${SCOPES.send}`)
+    expect(google.canChange(account)).toBe(true)
+    await google.act(account, ['google:42/m1', 'google:42/m2'], 'archive')
+    await google.act(account, ['google:42/m1'], 'star')
+    await google.act(account, ['google:42/m1'], 'trash')
+    expect(sent).toEqual([
+      { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify', method: 'POST', body: { ids: ['m1', 'm2'], removeLabelIds: ['INBOX'] } },
+      { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify', method: 'POST', body: { ids: ['m1'], addLabelIds: ['STARRED'] } },
+      { url: 'https://gmail.googleapis.com/gmail/v1/users/me/messages/m1/trash', method: 'POST', body: undefined }
+    ])
+  })
+
+  it('refuses changes on a read-only sign-in, and the service lists it', async () => {
+    const { google, sent } = setup(`openid ${SCOPES.mailReadOnly}`)
+    expect(google.canChange(account)).toBe(false)
+    await expect(google.act(account, ['google:42/m1'], 'read')).rejects.toThrow(/Reconnect it to allow changes/)
+    expect(sent).toEqual([])
+  })
+
+  it('updates the cached inbox after an action', async () => {
+    const { google } = setup(`openid ${SCOPES.mail} ${SCOPES.send}`)
+    const store = (google as unknown as { deps: { store: AccountStore } }).deps.store
+    const items = [
+      { id: 'google:42/m1', accountId: account.id, from: { name: '', email: 'a@b.c' }, subject: 's', snippet: '', receivedAt: '2026-10-24T00:00:00.000Z', unread: true },
+      { id: 'google:42/m2', accountId: account.id, from: { name: '', email: 'a@b.c' }, subject: 's', snippet: '', receivedAt: '2026-10-23T00:00:00.000Z', unread: true }
+    ]
+    const fake = Object.assign(Object.create(google), { recentMail: async () => items })
+    const service = new AccountService(store, { google: fake })
+    await service.recentMail()
+    await service.act(account.id, ['google:42/m1'], 'read')
+    await service.act(account.id, ['google:42/m2'], 'archive')
+    expect((await service.recentMail()).items).toMatchObject([{ id: 'google:42/m1', unread: false }])
+    expect(service.readOnly()).toEqual([])
   })
 })

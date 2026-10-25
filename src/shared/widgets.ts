@@ -23,7 +23,7 @@ export const WIDGET_TYPES: { type: WidgetType; label: string; description: strin
   { type: 'weather', label: 'Weather', description: 'Current weather and today’s range for a place', size: 'small' },
   { type: 'clocks', label: 'World clocks', description: 'The time in the cities you work with', size: 'small' },
   { type: 'meetings', label: 'Next meetings', description: 'Countdown to your next meeting, across calendars', size: 'medium' },
-  { type: 'mail', label: 'Recent mail', description: 'Newest messages from every mail account', size: 'medium' }
+  { type: 'mail', label: 'Mail', description: 'The mail that needs you first, from every account', size: 'medium' }
 ]
 
 export const SIZES: { value: WidgetSize; label: string }[] = [

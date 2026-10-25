@@ -290,13 +290,14 @@ function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JS
   const { accounts } = useAccounts()
   const { feed, error } = useMail()
   const withMail = accounts?.filter((a) => a.mail) ?? []
+  const today = feed?.items.filter((m) => m.urgency === 'now').length ?? 0
   const unread = feed?.items.filter((m) => m.unread).length ?? 0
   return (
     <>
       <header className="card-head">
         <h2>
-          <Icon name="mail" /> Recent mail
-          {unread > 0 && <span className="count">{unread} unread</span>}
+          <Icon name="mail" /> Mail
+          {today > 0 ? <span className="count">{today} need you today</span> : unread > 0 && <span className="count">{unread} unread</span>}
         </h2>
         {withMail.length > 0 && (
           <button className="link" onClick={() => ctx.onOpen('mail')}>

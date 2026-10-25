@@ -1,6 +1,7 @@
-import type { Account, CalendarEvent, MailMessage } from '../../shared/accounts'
+import { addressedIn, isBulk, type Account, type CalendarEvent, type MailAction, type MailBody, type MailMessage, type OutgoingMail } from '../../shared/accounts'
 import { USER_AGENT } from '../../shared/polite-fetch'
-import { AuthExpiredError, type Connector } from './connector'
+import { rawMessage } from './compose'
+import { AuthExpiredError, ReadOnlyError, type Connector } from './connector'
 import {
   authUrl,
   exchangeCode,
@@ -47,6 +48,8 @@ export function parseGmailMessage(json: unknown, account: Account): MailMessage 
   const labels = Array.isArray(j.labelIds) ? j.labelIds : []
   const ms = Number(j.internalDate)
   const thread = typeof j.threadId === 'string' ? j.threadId : j.id
+  const category = (['promotions', 'social', 'updates', 'forums'] as const).find((c) => labels.includes(`CATEGORY_${c.toUpperCase()}`))
+  const unsubscribe = header('list-unsubscribe')
   return {
     id: `${account.id}/${j.id}`,
     accountId: account.id,
@@ -55,7 +58,52 @@ export function parseGmailMessage(json: unknown, account: Account): MailMessage 
     snippet: decode(typeof j.snippet === 'string' ? j.snippet : ''),
     receivedAt: new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.parse(header('date')) || 0).toISOString(),
     unread: labels.includes('UNREAD'),
-    webUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(account.email)}#all/${thread}`
+    webUrl: `https://mail.google.com/mail/?authuser=${encodeURIComponent(account.email)}#all/${thread}`,
+    threadId: thread,
+    addressed: addressedIn(header('to'), header('cc'), account.email),
+    bulk: isBulk({ listId: header('list-id'), listUnsubscribe: unsubscribe, precedence: header('precedence') }),
+    category: category ?? (labels.includes('CATEGORY_PERSONAL') ? 'primary' : undefined),
+    starred: labels.includes('STARRED'),
+    providerImportant: labels.includes('IMPORTANT'),
+    ...(unsubscribe ? { unsubscribe } : {})
+  }
+}
+
+type GPart = { mimeType?: string; filename?: string; headers?: { name?: string; value?: string }[]; body?: { data?: string; attachmentId?: string }; parts?: GPart[] }
+
+/** A Gmail messages.get answer in full format: headers, the HTML and plain-text parts, attachment names. */
+export function parseGmailBody(json: unknown, account: Account): MailBody | null {
+  const j = json as { id?: unknown; internalDate?: unknown; payload?: GPart }
+  if (typeof j?.id !== 'string' || !j.payload) return null
+  const header = (name: string): string => j.payload?.headers?.find((h) => h.name?.toLowerCase() === name)?.value ?? ''
+  let html = ''
+  let text = ''
+  const attachments: string[] = []
+  const walk = (p: GPart): void => {
+    if (p.filename) attachments.push(p.filename)
+    else if (p.body?.data && p.mimeType === 'text/html' && !html) html = Buffer.from(p.body.data, 'base64url').toString('utf8')
+    else if (p.body?.data && p.mimeType === 'text/plain' && !text) text = Buffer.from(p.body.data, 'base64url').toString('utf8')
+    p.parts?.forEach(walk)
+  }
+  walk(j.payload)
+  const ms = Number(j.internalDate)
+  return {
+    id: `${account.id}/${j.id}`,
+    accountId: account.id,
+    from: parseAddress(header('from')),
+    to: header('to'),
+    cc: header('cc'),
+    subject: header('subject') || '(no subject)',
+    receivedAt: new Date(Number.isFinite(ms) && ms > 0 ? ms : Date.parse(header('date')) || 0).toISOString(),
+    html,
+    text,
+    attachments,
+    messageId: header('message-id'),
+    references: header('references'),
+    replyTo: header('reply-to'),
+    ...(typeof (j as { threadId?: unknown }).threadId === 'string' ? { threadId: (j as { threadId: string }).threadId } : {}),
+    unsubscribe: header('list-unsubscribe'),
+    unsubscribePost: header('list-unsubscribe-post')
   }
 }
 
@@ -96,7 +144,22 @@ export function parseGoogleEvent(json: unknown, account: Account): CalendarEvent
 
 /** Scopes to ask for, given the account's switches. */
 export function scopesFor(want: { mail: boolean; calendar: boolean }): string[] {
-  return [...SCOPES.identity, ...(want.mail ? [SCOPES.mail] : []), ...(want.calendar ? [SCOPES.calendar] : [])]
+  return [...SCOPES.identity, ...(want.mail ? [SCOPES.mail, SCOPES.send] : []), ...(want.calendar ? [SCOPES.calendar] : [])]
+}
+
+/** Gmail label changes for each action; trash has its own call. */
+export const GMAIL_LABELS: Record<Exclude<MailAction, 'trash'>, { addLabelIds?: string[]; removeLabelIds?: string[] }> = {
+  read: { removeLabelIds: ['UNREAD'] },
+  unread: { addLabelIds: ['UNREAD'] },
+  archive: { removeLabelIds: ['INBOX'] },
+  star: { addLabelIds: ['STARRED'] },
+  unstar: { removeLabelIds: ['STARRED'] }
+}
+
+const gmailId = (id: string): string => {
+  const gid = id.slice(id.lastIndexOf('/') + 1)
+  if (!/^[\w-]+$/.test(gid)) throw new Error('Unknown message')
+  return gid
 }
 
 // ---------- The connector ----------
@@ -157,7 +220,7 @@ export class GoogleConnector implements Connector {
   /** Switches follow what the user actually granted on Google's consent page. */
   private granted(tokens: GoogleTokens, want: { mail: boolean; calendar: boolean }): { mail: boolean; calendar: boolean } {
     const scopes = tokens.scope.split(' ')
-    const mail = want.mail && scopes.includes(SCOPES.mail)
+    const mail = want.mail && (scopes.includes(SCOPES.mail) || scopes.includes(SCOPES.mailReadOnly))
     const calendar = want.calendar && scopes.includes(SCOPES.calendar)
     if (!mail && !calendar) throw new Error('Google didn’t give access to Gmail or Calendar. Try again and leave the boxes ticked.')
     return { mail, calendar }
@@ -193,6 +256,28 @@ export class GoogleConnector implements Connector {
     return { ...account, ...this.granted(signed.tokens, account), status: 'ok' }
   }
 
+  /** Changing and sending came in one permission request, so both are needed to count. */
+  canChange(account: Account): boolean {
+    const scopes = this.tokens(account)?.scope.split(' ') ?? []
+    return scopes.includes(SCOPES.mail) && scopes.includes(SCOPES.send)
+  }
+
+  async act(account: Account, ids: string[], action: MailAction): Promise<void> {
+    if (!this.canChange(account)) throw new ReadOnlyError(`${account.email} can only read mail. Reconnect it to allow changes.`)
+    const gids = ids.map(gmailId)
+    if (action === 'trash') {
+      await mapLimit(gids, 5, (id) => this.api(account, `${GMAIL}/messages/${id}/trash`, { method: 'POST' }))
+      return
+    }
+    await this.api(account, `${GMAIL}/messages/batchModify`, { method: 'POST', body: { ids: gids, ...GMAIL_LABELS[action] } })
+  }
+
+  async send(account: Account, mail: OutgoingMail): Promise<void> {
+    if (!this.tokens(account)?.scope.split(' ').includes(SCOPES.send)) throw new ReadOnlyError(`${account.email} can’t send from the app yet. Reconnect it to allow sending.`)
+    const raw = (await rawMessage(account, mail)).toString('base64url')
+    await this.api(account, `${GMAIL}/messages/send`, { method: 'POST', body: { raw, ...(mail.threadId ? { threadId: mail.threadId } : {}) } })
+  }
+
   async remove(account: Account): Promise<void> {
     const tokens = this.tokens(account)
     if (tokens) await revoke(this.fetchFn, tokens.refreshToken)
@@ -216,11 +301,18 @@ export class GoogleConnector implements Connector {
     return next.accessToken
   }
 
-  /** GET a Google API, refreshing the access token once if Google says it expired. */
-  private async api<T>(account: Account, url: string): Promise<T> {
+  /** Calls a Google API, refreshing the access token once if Google says it expired. */
+  private async api<T>(account: Account, url: string, init: { method?: 'POST'; body?: unknown } = {}): Promise<T> {
     for (const force of [false, true]) {
       const res = await this.fetchFn(url, {
-        headers: { authorization: `Bearer ${await this.accessToken(account, force)}`, accept: 'application/json', 'user-agent': USER_AGENT },
+        method: init.method ?? 'GET',
+        headers: {
+          authorization: `Bearer ${await this.accessToken(account, force)}`,
+          accept: 'application/json',
+          'user-agent': USER_AGENT,
+          ...(init.body !== undefined ? { 'content-type': 'application/json' } : {})
+        },
+        ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
         signal: AbortSignal.timeout(15_000)
       })
       if (res.status === 401 && !force) continue
@@ -228,7 +320,9 @@ export class GoogleConnector implements Connector {
       if (res.status === 403) throw new Error('Google refused access. Reconnect the account and allow access.')
       if (res.status === 429) throw new Error('Google asked the app to slow down. It will try again shortly.')
       if (!res.ok) throw new Error(`Google answered ${res.status}.`)
-      return (await res.json()) as T
+      // batchModify answers 204 with no body.
+      const text = await res.text()
+      return (text ? JSON.parse(text) : {}) as T
     }
     throw new Error('unreachable')
   }
@@ -237,10 +331,16 @@ export class GoogleConnector implements Connector {
     const list = await this.api<{ messages?: { id: string }[] }>(account, `${GMAIL}/messages?labelIds=INBOX&maxResults=${limit}`)
     const ids = (list.messages ?? []).map((m) => m.id)
     const fields = 'id,threadId,labelIds,snippet,internalDate,payload/headers'
-    const msgs = await mapLimit(ids, 5, (id) =>
-      this.api<unknown>(account, `${GMAIL}/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&fields=${encodeURIComponent(fields)}`)
-    )
+    const headers = ['From', 'To', 'Cc', 'Subject', 'Date', 'List-Id', 'List-Unsubscribe', 'Precedence'].map((h) => `metadataHeaders=${h}`).join('&')
+    const msgs = await mapLimit(ids, 5, (id) => this.api<unknown>(account, `${GMAIL}/messages/${id}?format=metadata&${headers}&fields=${encodeURIComponent(fields)}`))
     return msgs.map((m) => parseGmailMessage(m, account)).filter((m): m is MailMessage => m !== null)
+  }
+
+  /** `id` is the app's message id, `<account id>/<Gmail id>`. */
+  async message(account: Account, id: string): Promise<MailBody> {
+    const body = parseGmailBody(await this.api<unknown>(account, `${GMAIL}/messages/${gmailId(id)}?format=full`), account)
+    if (!body) throw new Error('Gmail sent an empty message.')
+    return body
   }
 
   async events(account: Account, fromISO: string, toISO: string): Promise<CalendarEvent[]> {

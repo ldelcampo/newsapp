@@ -1,4 +1,4 @@
-import type { Account, CalendarEvent, MailMessage, Provider } from '../../shared/accounts'
+import type { Account, CalendarEvent, MailAction, MailBody, MailMessage, OutgoingMail, Provider } from '../../shared/accounts'
 
 /** One mail/calendar provider. The service calls only the accounts whose switches are on. */
 export interface Connector {
@@ -10,6 +10,14 @@ export interface Connector {
   /** Signs in again to grant what a switch now needs, such as calendar access. */
   reconsent?(account: Account): Promise<Account>
   recentMail(account: Account, limit: number): Promise<MailMessage[]>
+  /** One message in full, by the id recentMail gave it. */
+  message?(account: Account, id: string): Promise<MailBody>
+  /** Changes messages at the provider, by the ids recentMail gave them. */
+  act?(account: Account, ids: string[], action: MailAction): Promise<void>
+  /** False when the saved sign-in can only read mail, so actions need a reconnect first. */
+  canChange?(account: Account): boolean
+  /** Sends mail from this account (and keeps a copy in Sent where the provider doesn't). */
+  send?(account: Account, mail: OutgoingMail): Promise<void>
   events(account: Account, fromISO: string, toISO: string): Promise<CalendarEvent[]>
 }
 
@@ -18,5 +26,13 @@ export class AuthExpiredError extends Error {
   constructor(message = 'Sign in again to keep this account connected.') {
     super(message)
     this.name = 'AuthExpiredError'
+  }
+}
+
+/** Thrown when the sign-in only allows reading; reconnecting asks for the missing permission. */
+export class ReadOnlyError extends Error {
+  constructor(message = 'This account can only read mail. Reconnect it to allow changes.') {
+    super(message)
+    this.name = 'ReadOnlyError'
   }
 }

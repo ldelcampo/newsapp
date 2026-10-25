@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { cleanSiteUrl, siteKind } from '@shared/jira'
 import type { Settings } from '@shared/settings'
+import { JevKeyField } from './JevKeyField'
 
 const TOKEN_PAGE = 'https://id.atlassian.com/manage-profile/security/api-tokens'
-const JEV_PAGE = 'https://typesafe.ai'
 
 /** Connect Jira sites and choose how tickets are ranked. Lives inside the Settings form. */
 export function JiraCard({ settings, onChange }: { settings: Settings; onChange: (patch: Partial<Settings>) => void }): React.JSX.Element {
@@ -13,11 +13,6 @@ export function JiraCard({ settings, onChange }: { settings: Settings; onChange:
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(settings.jiraSites.length === 0)
-  const [hasJev, setHasJev] = useState(false)
-  const [jevKey, setJevKey] = useState('')
-
-  useEffect(() => void window.hub.hasJevKey().then(setHasJev), [])
-
   const cleaned = cleanSiteUrl(url)
   const cloud = !cleaned || siteKind(cleaned) === 'cloud'
 
@@ -127,34 +122,7 @@ export function JiraCard({ settings, onChange }: { settings: Settings; onChange:
         </label>
       </fieldset>
 
-      {settings.ticketRanking === 'jev' && (
-        <label className="field">
-          <span>TypeSafe AI key {hasJev && <span className="ok small">· saved</span>}</span>
-          <div className="row">
-            <input id="jevKey" type="password" value={jevKey} placeholder={hasJev ? 'Paste a new key to replace it' : 'Paste your API key'} onChange={(e) => setJevKey(e.target.value)} autoComplete="off" />
-            <button
-              type="button"
-              className="ghost"
-              disabled={!jevKey.trim()}
-              onClick={() => void window.hub.setJevKey(jevKey).then((has) => (setHasJev(has), setJevKey('')))}
-            >
-              Save key
-            </button>
-            {hasJev && (
-              <button type="button" className="ghost" onClick={() => void window.hub.setJevKey('').then(setHasJev)}>
-                Remove
-              </button>
-            )}
-          </div>
-          <small className="muted">
-            Get one at{' '}
-            <button type="button" className="link" onClick={() => void window.hub.openExternal(JEV_PAGE)}>
-              typesafe.ai
-            </button>
-            . Kept in your keychain. If Jev is unreachable, the built-in ranking is used.
-          </small>
-        </label>
-      )}
+      {settings.ticketRanking === 'jev' && <JevKeyField />}
     </>
   )
 }

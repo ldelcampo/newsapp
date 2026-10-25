@@ -1,21 +1,6 @@
 import { ArticleSkeleton } from './ArticleList'
-import { ConnectPrompt, EventList, MailList, NextMeeting, Problems, useNow } from './Inbox'
-import { useAccounts, useEvents, useMail } from './useAccounts'
-
-export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
-  const { accounts } = useAccounts()
-  const { feed, error } = useMail()
-  if (accounts && !accounts.some((a) => a.mail)) return <ConnectPrompt what="mail" onOpen={onAdd} />
-  return (
-    <section className="card enter">
-      {error && <p className="error small">Couldn’t load mail: {error}</p>}
-      {!feed && !error && <ArticleSkeleton rows={6} />}
-      {feed && feed.items.length === 0 && <p className="muted">Your inbox is empty.</p>}
-      {feed && <MailList mail={feed.items} accounts={accounts?.filter((a) => a.mail) ?? []} />}
-      {feed && <Problems problems={feed.problems} />}
-    </section>
-  )
-}
+import { ConnectPrompt, EventList, NextMeeting, Problems, useNow } from './Inbox'
+import { useAccounts, useEvents } from './useAccounts'
 
 export function CalendarView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const { accounts } = useAccounts()

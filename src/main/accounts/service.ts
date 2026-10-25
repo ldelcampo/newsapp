@@ -1,4 +1,4 @@
-import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailMessage, type Provider } from '../../shared/accounts'
+import { mergeEvents, mergeMail, type Account, type CalendarEvent, type MailAction, type MailBody, type MailDraft, type MailMessage, type Provider } from '../../shared/accounts'
 import { AuthExpiredError, type Connector } from './connector'
 import type { AccountFeed } from '../../shared/api'
 import type { AccountStore } from './store'
@@ -91,9 +91,76 @@ export class AccountService {
     return { lists, problems }
   }
 
-  async recentMail(limit = 30): Promise<AccountFeed<MailMessage>> {
-    const { lists, problems } = await this.gather('mail', MAIL_TTL, (a) => a.mail, (c, a) => c.recentMail(a, limit))
+  /** Newest inbox mail: up to `perAccount` from each account, `limit` in all. `force` skips the cache. */
+  async recentMail(limit = 30, perAccount = limit, force = false): Promise<AccountFeed<MailMessage>> {
+    if (force) for (const k of [...this.cache.keys()]) if (k.startsWith('mail:')) this.cache.delete(k)
+    const { lists, problems } = await this.gather('mail', MAIL_TTL, (a) => a.mail, (c, a) => c.recentMail(a, perAccount))
     return { items: mergeMail(lists, limit), problems }
+  }
+
+  /** Accounts whose sign-in only allows reading mail. */
+  readOnly(): string[] {
+    return this.store.list().filter((a) => a.mail && this.connectors[a.provider]?.canChange?.(a) === false).map((a) => a.id)
+  }
+
+  /** Changes messages at the provider, then updates the cached inbox to match, so the next list shows it at once. */
+  async act(accountId: string, ids: string[], action: MailAction): Promise<void> {
+    const account = this.store.get(accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.act) throw new Error('This account can’t change mail from the app yet.')
+    try {
+      await c.act(account, ids, action)
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
+    const key = `mail:${accountId}`
+    const hit = this.cache.get(key)
+    if (!hit) return
+    const set = new Set(ids)
+    const list = (hit.value as MailMessage[]).flatMap((m): MailMessage[] => {
+      if (!set.has(m.id)) return [m]
+      if (action === 'archive' || action === 'trash') return []
+      if (action === 'read' || action === 'unread') return [{ ...m, unread: action === 'unread' }]
+      return [{ ...m, starred: action === 'star' }]
+    })
+    this.cache.set(key, { at: hit.at, value: list })
+  }
+
+  /** Sends a draft; a reply gets the original's thread and reference headers. */
+  async send(draft: MailDraft): Promise<void> {
+    const account = this.store.get(draft.accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.send) throw new Error('This account can’t send from the app yet.')
+    const original = draft.replyTo ? await this.message(account.id, draft.replyTo) : null
+    try {
+      await c.send(account, {
+        to: draft.to,
+        cc: draft.cc,
+        subject: draft.subject,
+        text: draft.text,
+        ...(original?.messageId ? { inReplyTo: original.messageId, references: original.references ?? '' } : {}),
+        ...(original?.threadId ? { threadId: original.threadId } : {})
+      })
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
+  }
+
+  async message(accountId: string, id: string): Promise<MailBody> {
+    const account = this.store.get(accountId)
+    if (!account) throw new Error('That account is no longer connected.')
+    const c = this.connector(account.provider)
+    if (!c.message) throw new Error('This account can’t open messages in the app yet.')
+    try {
+      return await c.message(account, id)
+    } catch (e) {
+      if (e instanceof AuthExpiredError) this.store.put({ ...account, status: 'reauth' })
+      throw e
+    }
   }
 
   /** Events from now until `days` days ahead. */

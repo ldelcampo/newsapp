@@ -41,6 +41,7 @@ describe('SettingsStore', () => {
       jiraSites: [],
       projectWeights: {},
       ticketRanking: 'local',
+      mailRanking: 'local',
       factCheck: DEFAULT_SETTINGS.factCheck,
       syncFolder: ''
     })
