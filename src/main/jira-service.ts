@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   ASSIGNED_JQL,
+  gatewayUrl,
   FIELDS,
   JEV_QUESTIONS,
   jevState,
@@ -29,6 +30,15 @@ const JEV_TOP = 30
 export const JEV_URL = 'https://api.typesafe.ai/v1/systemone'
 export const jiraSecret = (siteId: string): string => `jira:${siteId}`
 export const JEV_SECRET = 'jev'
+
+export class JiraError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message)
+  }
+}
 
 /**
  * Reads the user's open Jira tickets straight from each site, so tickets never pass through
@@ -65,15 +75,19 @@ export class JiraService {
     } catch {
       throw new Error(`Could not reach ${siteUrl}.`)
     }
-    if (res.status === 401 || res.status === 403) throw new Error(`Jira at ${siteUrl} refused the token. Connect it again in Settings.`)
+    // After several failed sign-ins Jira wants a CAPTCHA, which only the browser can answer.
+    if (/CAPTCHA/i.test(res.headers.get('x-seraph-loginreason') ?? ''))
+      throw new JiraError(res.status, `Jira wants a CAPTCHA after failed sign-ins. Sign in to ${siteUrl} in your browser once, then try again.`)
+    if (res.status === 401) throw new JiraError(401, `Jira at ${siteUrl} refused the token. Connect it again in Settings.`)
+    if (res.status === 403)
+      throw new JiraError(403, `Jira at ${siteUrl} said the token isn’t allowed to read this. A scoped token needs the read:jira-user and read:jira-work scopes.`)
     if (res.status === 429) throw new Error(`Jira at ${siteUrl} asked us to slow down. Showing the last tickets.`)
     if (!res.ok) throw new Error(`Jira at ${siteUrl} answered ${res.status}.`)
     return res.json()
   }
 
-  /** Checks a token and returns whose it is. */
-  async whoAmI(site: Pick<JiraSite, 'url' | 'kind' | 'email'>, token: string): Promise<string> {
-    const me = (await this.call(`${site.url}/rest/api/${site.kind === 'cloud' ? 3 : 2}/myself`, { headers: this.headers(site, token) }, site.url)) as {
+  private async myself(base: string, site: Pick<JiraSite, 'url' | 'kind' | 'email'>, token: string): Promise<string> {
+    const me = (await this.call(`${base}/rest/api/${site.kind === 'cloud' ? 3 : 2}/myself`, { headers: this.headers(site, token) }, site.url)) as {
       displayName?: string
       emailAddress?: string
       name?: string
@@ -81,14 +95,47 @@ export class JiraService {
     return me.displayName ?? me.emailAddress ?? me.name ?? site.email
   }
 
+  /**
+   * Checks a token and returns whose it is. Classic Cloud tokens work on the site itself; scoped
+   * ones are refused there and only work through Atlassian's gateway, which then becomes `apiUrl`.
+   */
+  async whoAmI(site: Pick<JiraSite, 'url' | 'kind' | 'email'>, token: string): Promise<{ name: string; apiUrl?: string }> {
+    try {
+      return { name: await this.myself(site.url, site, token) }
+    } catch (e) {
+      if (site.kind !== 'cloud' || !(e instanceof JiraError) || /CAPTCHA/.test(e.message)) throw e
+      const cloudId = await this.cloudId(site.url)
+      if (!cloudId) throw e
+      const apiUrl = gatewayUrl(cloudId)
+      try {
+        return { name: await this.myself(apiUrl, site, token), apiUrl }
+      } catch (g) {
+        // A 403 from the gateway means the token is right but its scopes are not, which is the more useful message.
+        throw g instanceof JiraError && g.status === 403 ? g : e
+      }
+    }
+  }
+
+  /** Every Cloud site publishes its id without sign-in. */
+  private async cloudId(siteUrl: string): Promise<string | null> {
+    try {
+      const res = await this.fetchFn(`${siteUrl}/_edge/tenant_info`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(10_000) })
+      const id = res.ok ? ((await res.json()) as { cloudId?: unknown }).cloudId : null
+      return typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id) ? id : null
+    } catch {
+      return null
+    }
+  }
+
   private async search(site: JiraSite, token: string, jql: string, max: number): Promise<unknown[]> {
     const issues: unknown[] = []
     const headers = this.headers(site, token)
+    const base = site.apiUrl ?? site.url
     if (site.kind === 'cloud') {
       let nextPageToken: string | undefined
       do {
         const page = (await this.call(
-          `${site.url}/rest/api/3/search/jql`,
+          `${base}/rest/api/3/search/jql`,
           { method: 'POST', headers, body: JSON.stringify({ jql, fields: FIELDS, maxResults: 100, nextPageToken }) },
           site.url
         )) as { issues?: unknown[]; nextPageToken?: string; isLast?: boolean }
@@ -99,7 +146,7 @@ export class JiraService {
       let total = Infinity
       while (issues.length < Math.min(total, max)) {
         const q = new URLSearchParams({ jql, fields: FIELDS.join(','), maxResults: '100', startAt: String(issues.length) })
-        const page = (await this.call(`${site.url}/rest/api/2/search?${q}`, { headers }, site.url)) as { issues?: unknown[]; total?: number }
+        const page = (await this.call(`${base}/rest/api/2/search?${q}`, { headers }, site.url)) as { issues?: unknown[]; total?: number }
         if (!page.issues?.length) break
         issues.push(...page.issues)
         total = page.total ?? issues.length

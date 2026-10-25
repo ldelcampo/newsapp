@@ -21,7 +21,7 @@ import { startUpdater } from './updater'
 import { normalizeSettings } from '../shared/settings'
 import { cleanSiteUrl, siteKind, type JiraSite } from '../shared/jira'
 import { newWidget, normalizeWidget } from '../shared/widgets'
-import { JEV_SECRET, JiraService, jiraSecret } from './jira-service'
+import { JEV_SECRET, JiraError, JiraService, jiraSecret } from './jira-service'
 import { SecretStore as TokenStore } from './secrets'
 import { WidgetService } from './widget-service'
 
@@ -231,12 +231,18 @@ app.whenReady().then(() => {
     if (token.length < 10) return { ok: false, error: kind === 'cloud' ? 'Paste an API token.' : 'Paste a personal access token.' }
     if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'This computer has no keychain to keep the token safe, so Jira can’t be connected.' }
     try {
-      const name = await jira.whoAmI({ url, kind, email }, token).catch((e: Error) => {
-        throw /refused the token/.test(e.message) ? new Error(`Jira didn’t accept that ${kind === 'cloud' ? 'email and token. Check them' : 'token. Check it'} and try again.`) : e
+      const { name, apiUrl } = await jira.whoAmI({ url, kind, email }, token).catch((e: Error) => {
+        throw e instanceof JiraError && e.status === 401
+          ? new Error(
+              kind === 'cloud'
+                ? 'Jira didn’t accept that email and token. Use the email you sign in to Atlassian with, and a token from id.atlassian.com made by that same account.'
+                : 'Jira didn’t accept that token. Check it and try again.'
+            )
+          : e
       })
       const current = store.load()
       const existing = current.jiraSites.find((x) => x.url === url && x.email === email)
-      const site: JiraSite = { id: existing?.id ?? `jira-${Date.now().toString(36)}`, url, kind, email, name }
+      const site: JiraSite = { id: existing?.id ?? `jira-${Date.now().toString(36)}`, url, kind, email, name, ...(apiUrl ? { apiUrl } : {}) }
       tokens.set(jiraSecret(site.id), token)
       jira.forget(site.id)
       // The first connection puts "Needs you today" on the dashboard if it isn't there.
