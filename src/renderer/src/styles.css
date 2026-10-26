@@ -144,7 +144,9 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .card {
   position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0;
-  backdrop-filter: blur(20px) saturate(140%); box-shadow: var(--shadow);
+  /* No backdrop-filter: the glow behind is already blurred, so it looked the same, and on macOS
+     Chromium it made every card vanish for a frame now and then (a blink). */
+  box-shadow: var(--shadow);
   transition: border-color 0.3s var(--ease), transform 0.3s var(--ease);
 }
 .card:hover { border-color: var(--line-strong); }
