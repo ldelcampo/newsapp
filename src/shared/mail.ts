@@ -6,9 +6,42 @@ export type MailUrgency = 'now' | 'soon' | 'later'
 /** What the user said about a message or its sender. */
 export type Verdict = 'important' | 'not'
 
+/** What kind of mail it is, for the tabs. */
+export type MailCategory = 'reply' | 'fyi' | 'newsletter' | 'promotion' | 'receipt' | 'notification'
+export const MAIL_CATEGORIES: { value: MailCategory; label: string; jev: string }[] = [
+  { value: 'reply', label: 'Needs reply', jev: 'A person wrote to the recipient and expects a reply, decision or action' },
+  { value: 'fyi', label: 'FYI', jev: 'Written by a person or team, but only informs; nothing is asked' },
+  { value: 'newsletter', label: 'Newsletters', jev: 'A newsletter, digest or mailing-list post' },
+  { value: 'promotion', label: 'Promotions', jev: 'Marketing: offers, sales, product announcements' },
+  { value: 'receipt', label: 'Receipts', jev: 'A receipt, invoice, order, booking, payment or account statement' },
+  { value: 'notification', label: 'Notifications', jev: 'An automated alert or notification from an app or service' }
+]
+export const categoryLabel = (c: MailCategory): string => MAIL_CATEGORIES.find((x) => x.value === c)?.label ?? c
+
+/**
+ * A rule the user approved: mail matching it gets a category and, optionally, an importance.
+ * Rules run on this computer; they sync with the other settings.
+ */
+export interface MailRule {
+  id: string
+  /** An address (ana@x.com) or a whole domain (@x.com). */
+  from?: string
+  /** Words the subject contains, any case. */
+  subject?: string
+  category?: MailCategory
+  /** 'important' always shows it under Important; 'hide' keeps it out of everything but All mail. */
+  importance?: 'important' | 'normal' | 'hide'
+  /** Why the rule exists, shown in the list; AI-proposed rules say what they saw. */
+  note?: string
+  source: 'you' | 'ai' | 'learned'
+}
+
 export interface RankedMail extends MailMessage {
   score: number
   urgency: MailUrgency
+  kind: MailCategory
+  /** Kept out of every view but All mail by a rule. */
+  hidden?: boolean
   /** Short reasons, most important first, e.g. "Sent to you". */
   reasons: string[]
   /** What the user said about this message, if anything. */
@@ -26,6 +59,8 @@ export interface MailResult {
   snoozed: RankedMail[]
   /** Accounts that can only read mail until they are reconnected. */
   readOnly: string[]
+  /** Rules the user's own marks support, offered for approval. */
+  suggestions: MailRule[]
 }
 
 /**
@@ -143,6 +178,68 @@ export function senderLean(prefs: MailPrefs, email: string): number {
   return s ? Math.max(-3, Math.min(3, s.important - s.not)) : 0
 }
 
+const RULE_FROM = /^(@[a-z0-9.-]+\.[a-z]{2,}|[^\s@]+@[a-z0-9.-]+\.[a-z]{2,})$/i
+
+/** Drops malformed rules, so old or hand-edited settings still load. */
+export function normalizeRules(raw: unknown): MailRule[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((r): MailRule[] => {
+    const o = (r && typeof r === 'object' ? r : {}) as Record<string, unknown>
+    const from = typeof o.from === 'string' && RULE_FROM.test(o.from.trim()) ? o.from.trim().toLowerCase() : undefined
+    const subject = typeof o.subject === 'string' && o.subject.trim() ? o.subject.trim().slice(0, 100) : undefined
+    const category = MAIL_CATEGORIES.some((c) => c.value === o.category) ? (o.category as MailCategory) : undefined
+    const importance = o.importance === 'important' || o.importance === 'normal' || o.importance === 'hide' ? o.importance : undefined
+    if (typeof o.id !== 'string' || !o.id || (!from && !subject) || (!category && !importance)) return []
+    const source = o.source === 'ai' || o.source === 'learned' ? o.source : 'you'
+    const note = typeof o.note === 'string' && o.note.trim() ? o.note.trim().slice(0, 200) : undefined
+    return [{ id: o.id, ...(from ? { from } : {}), ...(subject ? { subject } : {}), ...(category ? { category } : {}), ...(importance ? { importance } : {}), ...(note ? { note } : {}), source }]
+  }).slice(0, 300)
+}
+
+export function ruleMatches(r: MailRule, m: Pick<MailMessage, 'from' | 'subject'>): boolean {
+  const email = m.from.email.toLowerCase()
+  if (r.from && !(r.from.startsWith('@') ? email.endsWith(r.from) || email.endsWith(`.${r.from.slice(1)}`) : email === r.from)) return false
+  if (r.subject && !m.subject.toLowerCase().includes(r.subject.toLowerCase())) return false
+  return true
+}
+
+/** Plain words for a rule, e.g. "From @x.com → Promotions, hidden". */
+export function describeRule(r: MailRule): string {
+  const when = [r.from ? `From ${r.from}` : '', r.subject ? `subject has “${r.subject}”` : ''].filter(Boolean).join(' and ')
+  const then = [r.category ? categoryLabel(r.category) : '', r.importance === 'important' ? 'always important' : r.importance === 'hide' ? 'hidden' : r.importance === 'normal' ? 'not important' : '']
+    .filter(Boolean)
+    .join(', ')
+  return `${when} → ${then}`
+}
+
+const RECEIPT = /\b(receipt|invoice|your order|order (confirmation|#)|payment|booking|reservation confirmed|statement|factura|recibo|comprobante|pedido|compra|pago|estado de cuenta|reservaci[oó]n confirmada|cfdi)\b/i
+const PROMO = /\b(sale|% off|discount|deal|offer|limited time|free shipping|oferta|descuento|promoci[oó]n|venta|rebaja|gratis|cup[oó]n)\b|%/i
+
+/** The category from what the message itself shows, before Jev or rules. */
+export function guessCategory(m: MailMessage, asks: boolean): MailCategory {
+  const text = `${m.subject} ${m.snippet}`
+  const machine = AUTOMATED_SENDER.test(m.from.email)
+  if (RECEIPT.test(text) && (machine || m.bulk || m.category === 'updates' || !asks)) return 'receipt'
+  if (m.category === 'promotions' || ((m.bulk || machine) && PROMO.test(text))) return 'promotion'
+  if (m.bulk || m.category === 'forums') return 'newsletter'
+  if (machine || m.category === 'updates' || m.category === 'social') return 'notification'
+  return asks && m.addressed !== 'none' ? 'reply' : 'fyi'
+}
+
+/**
+ * Rules the user's own marks already support: a sender marked the same way at least twice.
+ * They are offered, never applied, until the user accepts them.
+ */
+export function learnedRules(prefs: MailPrefs, existing: MailRule[]): MailRule[] {
+  const covered = new Set(existing.map((r) => r.from).filter(Boolean))
+  return Object.entries(prefs.senders).flatMap(([email, s]): MailRule[] => {
+    if (covered.has(email)) return []
+    if (s.important >= 2 && s.not === 0) return [{ id: `learned:${email}`, from: email, importance: 'important', source: 'learned', note: `You marked ${s.important} messages from this sender important.` }]
+    if (s.not >= 2 && s.important === 0) return [{ id: `learned:${email}`, from: email, importance: 'hide', source: 'learned', note: `You marked ${s.not} messages from this sender not important.` }]
+    return []
+  })
+}
+
 /** Extra signal from Jev, per message. */
 export interface MailSignal {
   /** 0 (can wait) to 4 (today). */
@@ -152,10 +249,15 @@ export interface MailSignal {
   /** Probability that it's automated, marketing or a newsletter. */
   automated: number
   confidence: number
+  /** Jev's category and how sure it is; missing in answers cached before categories existed. */
+  category?: MailCategory
+  categoryConfidence?: number
 }
 
 const AUTOMATED_SENDER = /^(no-?reply|do-?not-?reply|notifications?|alerts?|mailer-daemon|news(letter)?|marketing|info|updates?|bounce)[@+.-]/i
 const ASKS = /\?|\b(urgent|asap|today|deadline|please|can you|could you|would you|need(ed)? (you|your)|approve|approval|sign|confirm|review|urgente|hoy|favor|puedes|podrías|podrias|necesito|necesitamos|apruebe|aprobar|confirmar|revisar|firma)\b/i
+/** A request for the reader to answer or act, which makes mail "Needs reply" (urgency words alone don't). */
+const REQUEST = /\?|\b(please|can you|could you|would you|let me know|need(ed)? (you|your)|approve|confirm|review|sign|puedes|podr[ií]as|favor|necesito|necesitamos|confirma|revisa|aprueba|me dices|quedo atento)\b/i
 const URGENCY_WORDS = ['can wait', 'this month', 'this week', 'tomorrow', 'today']
 const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
 
@@ -164,7 +266,7 @@ const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}
  * by a person or a machine, whether it asks something, how new it is, what Gmail thinks of it,
  * and what the user taught the ranking. Jev's answers, when there are any, add to that.
  */
-export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Date(), ai: Record<string, MailSignal> = {}): RankedMail[] {
+export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Date(), ai: Record<string, MailSignal> = {}, rules: MailRule[] = []): RankedMail[] {
   const ranked = messages.map((m): RankedMail => {
     const reasons: [number, string][] = []
     const add = (pts: number, why: string): void => {
@@ -184,7 +286,8 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
     else if (m.category === 'updates' || m.category === 'forums') add(-10, '')
     if (m.providerImportant && !automated) add(8, 'Gmail marked it important')
     if (m.starred) add(15, 'Starred')
-    if (!automated && ASKS.test(`${m.subject} ${m.snippet}`)) add(8, 'Asks you something')
+    const asks = !automated && ASKS.test(`${m.subject} ${m.snippet}`)
+    if (asks) add(8, 'Asks you something')
     if (hours < 24) add(8, '')
     else if (hours > 24 * 7) add(-10, '')
     else if (hours > 72) add(-4, '')
@@ -201,13 +304,30 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
       if (signal.action >= 0.6 && !reasons.some(([, r]) => r === 'Asks you something')) reasons.push([10, 'Asks you something'])
     }
 
+    let kind = guessCategory(m, (!automated && REQUEST.test(`${m.subject} ${m.snippet}`)) || (signal?.action ?? 0) >= 0.6)
+    if (signal?.category && (signal.categoryConfidence ?? 0) >= 0.5) kind = signal.category
+    const rule = rules.find((r) => ruleMatches(r, m))
+    if (rule?.category) kind = rule.category
+    if (kind === 'promotion' || kind === 'newsletter') score -= 8
+
     score = Math.round(score)
     const verdict = prefs.messages[m.id]?.verdict
     // Read mail older than two days has been dealt with, whatever it scored.
     const stale = !m.unread && hours > 48
     let urgency: MailUrgency = score >= 40 && !stale ? 'now' : score >= 22 ? 'soon' : 'later'
+    let hidden = false
+    if (rule?.importance === 'important') {
+      urgency = urgency === 'later' ? 'soon' : urgency
+      score = Math.max(score, 30)
+      reasons.unshift([97, 'Your rule: important'])
+    } else if (rule?.importance === 'normal' || rule?.importance === 'hide') {
+      urgency = 'later'
+      hidden = rule.importance === 'hide'
+      reasons.unshift([97, rule.importance === 'hide' ? 'Your rule: hidden' : 'Your rule: not important'])
+    } else if (rule?.category) reasons.unshift([96, `Your rule: ${categoryLabel(rule.category)}`])
     if (verdict === 'important') {
       urgency = 'now'
+      hidden = false
       reasons.unshift([99, 'You marked it important'])
     }
     if (verdict === 'not') {
@@ -226,6 +346,8 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
       ...m,
       score,
       urgency,
+      kind,
+      ...(hidden ? { hidden } : {}),
       reasons: reasons.sort((a, b) => b[0] - a[0]).map(([, r]) => r),
       ...(verdict ? { verdict } : {}),
       ...(snoozedUntil ? { snoozedUntil } : {})
@@ -246,8 +368,13 @@ export const JEV_MAIL_QUESTIONS = {
     criteria: ['Can wait or be ignored', 'This month', 'This week', 'Tomorrow', 'Today']
   },
   action: { type: 'noul', instructions: 'Does this email ask the recipient personally to reply, decide, approve, attend or do something?' },
-  automated: { type: 'noul', instructions: 'Is this an automated notification, marketing message or newsletter rather than an email a person wrote to the recipient?' }
-} as const
+  automated: { type: 'noul', instructions: 'Is this an automated notification, marketing message or newsletter rather than an email a person wrote to the recipient?' },
+  category: {
+    type: 'choice',
+    instructions: 'What kind of email is this?',
+    criteria: Object.fromEntries(MAIL_CATEGORIES.map((c) => [c.value, c.jev]))
+  }
+}
 
 /** What Jev reads about a message: headers, the preview and what the user taught about the sender. */
 export function jevMailState(m: MailMessage, prefs: MailPrefs, now = new Date()): string {
@@ -271,11 +398,13 @@ export function parseJevMail(json: unknown): MailSignal {
   if (!Number.isFinite(score)) throw new Error('Unexpected answer from Jev.')
   const p = (v: unknown): number => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : 0)
   const confidence = Number(a?.urgency?.confidence)
+  const category = MAIL_CATEGORIES.find((c) => c.value === a?.category?.choice)?.value
   return {
     urgency: Math.max(0, Math.min(4, score)),
     action: p(a?.action?.noul),
     automated: p(a?.automated?.noul),
-    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5
+    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5,
+    ...(category ? { category, categoryConfidence: Number.isFinite(Number(a?.category?.confidence)) ? p(a?.category?.confidence) : 0.5 } : {})
   }
 }
 
@@ -366,4 +495,62 @@ export function unsubscribeMethod(header: string, post = ''): UnsubscribeMethod 
     if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return { kind: 'mail', to, subject: q.get('subject') || 'unsubscribe', body: q.get('body') || 'unsubscribe' }
   }
   return https ? { kind: 'link', url: https } : null
+}
+
+// ---------- Rules the AI proposes ----------
+
+export interface SenderStats {
+  email: string
+  name: string
+  count: number
+  unread: number
+  bulk: boolean
+  kind: MailCategory
+  subjects: string[]
+  important: number
+  not: number
+}
+
+/** One line per sender: what the AI sees when it proposes rules. Message bodies are never included. */
+export function senderStats(mail: RankedMail[], prefs: MailPrefs, max = 60): SenderStats[] {
+  const by = new Map<string, SenderStats>()
+  for (const m of mail) {
+    const email = m.from.email.toLowerCase()
+    if (!email) continue
+    const s = by.get(email) ?? { email, name: m.from.name, count: 0, unread: 0, bulk: false, kind: m.kind, subjects: [], important: 0, not: 0 }
+    s.count++
+    if (m.unread) s.unread++
+    s.bulk ||= !!m.bulk
+    if (s.subjects.length < 3) s.subjects.push(m.subject.slice(0, 90))
+    by.set(email, s)
+  }
+  for (const [email, v] of Object.entries(prefs.senders)) {
+    const s = by.get(email)
+    if (s) Object.assign(s, { important: v.important, not: v.not })
+  }
+  return [...by.values()].sort((a, b) => b.important + b.not - (a.important + a.not) || b.count - a.count).slice(0, max)
+}
+
+export function rulesPrompt(stats: SenderStats[], existing: MailRule[]): string {
+  return [
+    'The user wants to see only the email that matters. From the senders below, propose up to 12 rules.',
+    'A rule matches a sender address, or a whole domain written as "@domain.com" when several senders there behave alike, and optionally words in the subject.',
+    `It sets a category (${MAIL_CATEGORIES.map((c) => c.value).join(', ')}) and/or an importance: "important" (always show), "normal", or "hide" (keep out of the inbox views).`,
+    'Follow the user\'s own marks first. Hide only bulk or automated senders the user ignores or marked not important; never hide a person writing directly. Prefer fewer, broader rules.',
+    'For each rule write a short "note" saying what you saw, in the language most subjects use.',
+    'Answer as JSON: {"rules":[{"from":"@shop.com","category":"promotion","importance":"hide","note":"..."}]}',
+    '',
+    existing.length ? `Rules the user already has (don't repeat them):\n${existing.map(describeRule).join('\n')}\n` : '',
+    'Senders (address | name | messages | unread | list mail | guessed kind | marked important / not important | sample subjects):',
+    ...stats.map((s) => `${s.email} | ${s.name} | ${s.count} | ${s.unread} | ${s.bulk ? 'yes' : 'no'} | ${s.kind} | ${s.important}/${s.not} | ${s.subjects.join(' ; ')}`)
+  ].join('\n')
+}
+
+/** The AI's proposals as rules, minus ones that repeat an existing rule. */
+export function parseProposedRules(json: unknown, existing: MailRule[], idPrefix: string): MailRule[] {
+  const raw = (json as { rules?: unknown })?.rules
+  const list = normalizeRules((Array.isArray(raw) ? raw : []).map((r, i) => ({ ...(r && typeof r === 'object' ? r : {}), id: `${idPrefix}${i}`, source: 'ai' })))
+  const key = (r: MailRule): string => `${r.from ?? ''}|${r.subject ?? ''}`
+  const have = new Set(existing.map(key))
+  return list.filter((r) => !have.has(key(r))).slice(0, 12)
 }

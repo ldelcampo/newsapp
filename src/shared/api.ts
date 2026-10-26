@@ -1,7 +1,7 @@
 import type { TicketResult } from './jira'
 import type { FactCheckStep, FactReport, ProviderId, SecretName } from './factcheck'
 import type { Account, CalendarEvent, ConnectionTest, MailAction, MailBody, MailDraft, Provider } from './accounts'
-import type { MailResult, MailSummary, ReplyIdea, SnoozeOption, Verdict } from './mail'
+import type { MailResult, MailRule, MailSummary, ReplyIdea, SnoozeOption, Verdict } from './mail'
 import type { Source, SourceStatus } from './news'
 import type { RankedArticle } from './ranking'
 import type { Settings } from './settings'
@@ -126,6 +126,8 @@ export interface HubApi {
   mailUnsubscribe(accountId: string, id: string): Promise<{ done: true; how: string } | { open: string }>
   /** Creates a Jira task from a message, assigned to the user. */
   mailTask(accountId: string, id: string, task: { siteId: string; projectKey: string; summary: string }): Promise<{ key: string; url: string }>
+  /** Rules proposed by the AI chosen under Fact checking, from senders, subjects and the user's marks. Nothing is saved. */
+  mailProposeRules(): Promise<MailRule[]>
   /** How many senders the ranking has learned about. */
   mailLearned(): Promise<number>
   /** Forgets everything the user taught the mail ranking. */

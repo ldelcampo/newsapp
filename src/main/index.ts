@@ -323,6 +323,7 @@ app.whenReady().then(() => {
     const link = mail.loaded(id(m))?.webUrl
     return jira.createTask(store.load(), String(t.siteId ?? ''), String(t.projectKey ?? '').trim().toUpperCase(), String(t.summary ?? '').trim() || body.subject, taskDescription(body, link))
   })
+  ipcMain.handle('mail:propose-rules', () => mail.proposeRules(store.load()))
   ipcMain.handle('mail:learned', () => mail.learned())
   ipcMain.handle('mail:reset-feedback', () => mail.resetFeedback())
   ipcMain.handle('accounts:events', () => accounts.upcomingEvents())
