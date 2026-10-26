@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { WidgetService } from '../src/main/widget-service'
 import { normalizeSettings } from '../src/shared/settings'
-import { DEFAULT_DASHBOARD, normalizeDashboard, parsePlaces, parseRates, parseWeather, placeQuery } from '../src/shared/widgets'
+import { DEFAULT_DASHBOARD, normalizeDashboard, parseMarketRates, parsePlaces, parseRates, parseWeather, placeQuery } from '../src/shared/widgets'
 
 describe('dashboard settings', () => {
   it('starts with the default widgets', () => {
@@ -41,8 +41,16 @@ describe('widget data', () => {
     expect(parseRates({ amount: 1, base: 'USD', date: '2026-10-23', rates: { MXN: 18.4, EUR: 0.92 } })).toEqual({
       base: 'USD',
       date: '2026-10-23',
-      rates: { MXN: 18.4, EUR: 0.92 }
+      rates: { MXN: 18.4, EUR: 0.92 },
+      source: 'ecb'
     })
+    expect(parseMarketRates({ data: { currency: 'USD', rates: { MXN: '18.5714', EUR: '0.8941', BTC: '0.0000087' } } }, ['MXN', 'EUR', 'XYZ'], Date.UTC(2026, 9, 26, 15, 21))).toEqual({
+      base: 'USD',
+      date: '2026-10-26T15:21:00.000Z',
+      rates: { MXN: 18.5714, EUR: 0.8941 },
+      source: 'market'
+    })
+    expect(() => parseMarketRates({ data: { currency: 'USD', rates: {} } }, ['MXN'], 0)).toThrow()
     expect(
       parseWeather({ current: { temperature_2m: 21.4, weather_code: 2, is_day: 0 }, current_units: { temperature_2m: '°C' }, daily: { temperature_2m_max: [24], temperature_2m_min: [12] } })
     ).toEqual({ temperature: 21.4, code: 2, description: 'Partly cloudy', kind: 'partly', isDay: false, high: 24, low: 12, unit: '°C' })
@@ -56,22 +64,31 @@ describe('widget data', () => {
     let t = 0
     let calls = 0
     let fail = false
-    const fetchFn = async (): Promise<Response> => {
+    const fetchFn = async (url: string): Promise<Response> => {
       calls++
       if (fail) throw new Error('offline')
-      return new Response(JSON.stringify({ base: 'USD', date: '2026-10-23', rates: { MXN: 18.4 } }))
+      if (url.includes('frankfurter')) return new Response(JSON.stringify({ base: 'USD', date: '2026-10-23', rates: { EUR: 0.92 } }))
+      return new Response(JSON.stringify({ data: { currency: 'USD', rates: { MXN: '18.4', EUR: '0.89' } } }))
     }
     const svc = new WidgetService(fetchFn as typeof fetch, () => t)
     await svc.rates('USD', ['MXN'])
-    await svc.rates('USD', ['MXN'])
-    t += 30 * 60_000
-    await svc.rates('USD', ['MXN'])
+    await svc.rates('USD', ['MXN', 'EUR'])
+    t += 4 * 60_000
+    await svc.rates('USD', ['EUR'])
     expect(calls).toBe(1)
-    t += 31 * 60_000
+    t += 2 * 60_000
     fail = true
-    expect((await svc.rates('USD', ['MXN'])).rates.MXN).toBe(18.4)
+    const old = await svc.rates('USD', ['MXN'])
+    expect(old).toMatchObject({ source: 'market', rates: { MXN: 18.4 } })
     expect(calls).toBe(2)
-    await expect(svc.rates('USD', ['EUR'])).rejects.toThrow('offline')
+    await expect(svc.rates('EUR', ['MXN'])).rejects.toThrow('offline')
+  })
+
+  it('falls back to ECB rates when market rates are unavailable', async () => {
+    const fetchFn = async (url: string): Promise<Response> =>
+      url.includes('coinbase') ? new Response('busy', { status: 429 }) : new Response(JSON.stringify({ base: 'USD', date: '2026-10-26', rates: { MXN: 18.6155 } }))
+    const r = await new WidgetService(fetchFn as typeof fetch).rates('USD', ['MXN'])
+    expect(r).toEqual({ base: 'USD', date: '2026-10-26', rates: { MXN: 18.6155 }, source: 'ecb' })
   })
 })
 

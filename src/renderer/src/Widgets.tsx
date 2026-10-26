@@ -20,17 +20,26 @@ export interface WidgetContext {
 }
 
 /** Runs an async load whenever `key` changes; keeps the last result while reloading. */
-function useLoad<T>(key: string, load: () => Promise<T>): { data: T | null; error: string } {
+function useLoad<T>(key: string, load: () => Promise<T>, everyMs = 0): { data: T | null; error: string } {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState('')
   useEffect(() => {
     let live = true
     setError('')
-    load()
-      .then((d) => live && setData(d))
-      .catch((e: Error) => live && setError(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')))
+    const run = (): void => {
+      load()
+        .then((d) => {
+          if (!live) return
+          setData(d)
+          setError('')
+        })
+        .catch((e: Error) => live && setError(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')))
+    }
+    run()
+    const timer = everyMs ? setInterval(run, everyMs) : undefined
     return () => {
       live = false
+      clearInterval(timer)
     }
   }, [key])
   return { data, error }
@@ -178,7 +187,7 @@ function Rate({ value }: { value: number | undefined }): React.JSX.Element {
 }
 
 function Currency({ widget }: { widget: Extract<Widget, { type: 'currency' }> }): React.JSX.Element {
-  const { data, error } = useLoad<Rates>(`${widget.base}:${widget.symbols.join(',')}`, () => window.hub.rates(widget.base, widget.symbols))
+  const { data, error } = useLoad<Rates>(`${widget.base}:${widget.symbols.join(',')}`, () => window.hub.rates(widget.base, widget.symbols), 5 * 60_000)
   return (
     <>
       <h2>
@@ -197,7 +206,11 @@ function Currency({ widget }: { widget: Extract<Widget, { type: 'currency' }> })
               </li>
             ))}
           </ul>
-          <p className="muted small">European Central Bank reference rates, {new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</p>
+          <p className="muted small">
+            {data.source === 'market'
+              ? `Market rates, ${new Date(data.date).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}`
+              : `European Central Bank reference rates, ${new Date(`${data.date}T12:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
+          </p>
         </>
       )}
     </>

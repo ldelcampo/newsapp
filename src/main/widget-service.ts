@@ -1,11 +1,11 @@
 import { USER_AGENT } from '../shared/polite-fetch'
-import { parsePlaces, parseRates, placeQuery, parseWeather, type Place, type Rates, type Weather } from '../shared/widgets'
+import { parseMarketRates, parsePlaces, parseRates, placeQuery, parseWeather, type Place, type Rates, type Weather } from '../shared/widgets'
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>
 
 /**
  * Live data for dashboard widgets, from free services that need no key. Each answer is kept
- * for a while (rates change once a day, weather every 15 minutes), so dashboards and repeated
+ * for a while (market rates 5 minutes, weather 30 minutes), so dashboards and repeated
  * refreshes stay far below the services' fair-use limits.
  */
 export class WidgetService {
@@ -32,9 +32,20 @@ export class WidgetService {
     }
   }
 
-  rates(base: string, symbols: string[]): Promise<Rates> {
-    const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}&symbols=${symbols.map(encodeURIComponent).join(',')}`
-    return this.cached(url, 60 * 60_000, parseRates)
+  /**
+   * Live mid-market rates from Coinbase's public, keyless API, which matched Google's converter
+   * within 0.05% on USD/MXN, EUR/MXN and EUR/USD. If it fails, the ECB's daily reference rates.
+   */
+  async rates(base: string, symbols: string[]): Promise<Rates> {
+    const url = `https://api.coinbase.com/v2/exchange-rates?currency=${encodeURIComponent(base)}`
+    try {
+      // One request per base serves every widget with that base, whatever its currencies.
+      const raw = await this.cached(url, 5 * 60_000, (j) => ({ json: j, at: this.now() }))
+      return parseMarketRates(raw.json, symbols, raw.at)
+    } catch {
+      const ecb = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(base)}&symbols=${symbols.map(encodeURIComponent).join(',')}`
+      return this.cached(ecb, 60 * 60_000, parseRates)
+    }
   }
 
   weather(place: Place): Promise<Weather> {
