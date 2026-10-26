@@ -116,5 +116,21 @@ describe('place search', () => {
     // Nothing matches the extra words: show every result rather than none.
     expect(parsePlaces(answer, ['Peru'])).toHaveLength(2)
   })
+  it('puts big cities first and drops same-named places in the same state', () => {
+    const hamlet = (admin1: string) => ({ name: 'Querétaro', latitude: 16, longitude: -92, admin1, country: 'Mexico', country_code: 'MX' })
+    const json = {
+      results: [
+        { ...hamlet('Chiapas'), population: 2203 },
+        hamlet('Veracruz'),
+        hamlet('Chiapas'),
+        { name: 'Querétaro City', latitude: 20.59, longitude: -100.39, admin1: 'Querétaro', country: 'Mexico', country_code: 'MX', population: 1594212 }
+      ]
+    }
+    expect(parsePlaces(json).map((p) => p.name)).toEqual([
+      'Querétaro City, Querétaro, Mexico',
+      'Querétaro, Chiapas, Mexico',
+      'Querétaro, Veracruz, Mexico'
+    ])
+  })
 })
 
