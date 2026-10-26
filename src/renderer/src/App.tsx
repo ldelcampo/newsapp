@@ -31,7 +31,6 @@ export function App(): React.JSX.Element {
         applyTheme(s.theme)
         setRemoteNotice(true)
         setTimeout(() => setRemoteNotice(false), 4000)
-        // Settings may hold unsaved edits, so it keeps its form until the user leaves it.
         setRevision((r) => r + 1)
       }),
     []
@@ -80,8 +79,9 @@ export function App(): React.JSX.Element {
         ))}
       </nav>
       <main className={`content ${view === 'mail' ? 'wide' : ''}`}>
-        {/* The key replays the entrance animation on every view change. */}
-        <div className="view" key={view === 'settings' ? view : `${view}-${revision}`}>
+        {/* The key replays the entrance animation on every view change. Settings keeps unsaved edits and
+            the dashboard updates itself, so only the other views reload when another computer's changes arrive. */}
+        <div className="view" key={view === 'settings' || view === 'dashboard' ? view : `${view}-${revision}`}>
           <h1 className="title">{current.label}</h1>
           {body()}
         </div>

@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
 
-/** One page of `items`; goes back to the first page when the list's length changes. */
-export function usePage<T>(items: T[], perPage: number): { page: T[]; at: number; pages: number; go: (n: number) => void } {
+/**
+ * One page of `items`; goes back to the first page when `resetOn` (such as a filter) or the page
+ * size changes. A background refresh that only adds or drops items keeps the reader's page.
+ */
+export function usePage<T>(items: T[], perPage: number, resetOn: unknown = ''): { page: T[]; at: number; pages: number; go: (n: number) => void } {
   const [at, setAt] = useState(0)
   const pages = Math.max(1, Math.ceil(items.length / perPage))
-  useEffect(() => setAt(0), [items.length, perPage])
+  useEffect(() => setAt(0), [resetOn, perPage])
   const current = Math.min(at, pages - 1)
   return { page: items.slice(current * perPage, (current + 1) * perPage), at: current, pages, go: (n) => setAt(Math.max(0, Math.min(pages - 1, n))) }
 }
