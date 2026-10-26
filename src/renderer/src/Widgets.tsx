@@ -53,7 +53,7 @@ function TopStories({ ctx, size, topic }: { ctx: WidgetContext; size: WidgetSize
   const { settings, news, loading, reload, onOpen } = ctx
   const all = news?.articles ?? []
   const list = topic ? aboutTopic(all, topic) : filterArticles(all, { onlyMatches: settings.onlyMyTopics })
-  const p = usePage(list, STORY_COUNT[size])
+  const p = usePage(list, STORY_COUNT[size], `${topic}:${settings.onlyMyTopics}`)
   return (
     <>
       <header className="card-head">
@@ -106,7 +106,7 @@ function NeedsYou({ ctx, size, project, label }: { ctx: WidgetContext; size: Wid
   const t = useTickets(connected)
   const tickets = ticketsFor(t.result?.tickets ?? [], { project, label })
   const now = tickets.filter((x) => x.urgency === 'now').length
-  const p = usePage(tickets, STORY_COUNT[size])
+  const p = usePage(tickets, STORY_COUNT[size], `${project}:${label}`)
   const projectName = t.result?.projects.find((x) => x.key === project)?.name
   return (
     <>

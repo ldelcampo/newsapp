@@ -7,28 +7,48 @@ import { WidgetBody, WidgetOptions, type WidgetContext } from './Widgets'
 
 const ROW = 2 // px; must match grid-auto-rows in styles.css
 const GAP = 18
+/** A card that shrinks by less than this keeps its space, so a reworded line doesn't reshuffle the dashboard. */
+const SHRINK_SLACK = 48 / ROW
 
 /**
  * Masonry packing: each card spans as many tiny grid rows as its height needs, so shorter
- * widgets slide up into the space beside taller ones instead of leaving gaps.
+ * widgets slide up into the space beside taller ones instead of leaving gaps. Any span change
+ * can move every card after it, so cards grow right away but ignore small shrinks, and all
+ * changes in a frame land together. `layout` changing (such as entering edit mode) refits exactly.
  */
-function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean): void {
+function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean, layout: unknown): void {
   useEffect(() => {
     const grid = ref.current
     if (!grid) return
-    const fit = (el: HTMLElement): void => {
-      el.style.gridRowEnd = `span ${Math.ceil((el.offsetHeight + GAP) / ROW)}`
+    const spans = new WeakMap<Element, number>()
+    const pending = new Set<HTMLElement>()
+    let frame = 0
+    const fit = (): void => {
+      frame = 0
+      for (const el of pending) {
+        if (!el.isConnected) continue
+        const want = Math.ceil((el.offsetHeight + GAP) / ROW)
+        const have = spans.get(el)
+        if (have !== undefined && want <= have && have - want < SHRINK_SLACK) continue
+        spans.set(el, want)
+        el.style.gridRowEnd = `span ${want}`
+      }
+      pending.clear()
     }
-    const sizes = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target as HTMLElement)))
+    const sizes = new ResizeObserver((entries) => {
+      entries.forEach((e) => pending.add(e.target as HTMLElement))
+      frame ||= requestAnimationFrame(fit)
+    })
     const watch = (): void => Array.from(grid.children).forEach((c) => sizes.observe(c))
     const added = new MutationObserver(watch)
     watch()
     added.observe(grid, { childList: true })
     return () => {
+      cancelAnimationFrame(frame)
       sizes.disconnect()
       added.disconnect()
     }
-  }, [ref, ready])
+  }, [ref, ready, layout])
 }
 
 /** Widget types that only make sense once on a dashboard. */
@@ -49,8 +69,10 @@ export function DashboardView({ onOpen }: { onOpen: WidgetContext['onOpen'] }): 
   const [dragging, setDragging] = useState<string | null>(null)
   const saving = useRef<Promise<unknown>>(Promise.resolve())
   const grid = useRef<HTMLDivElement>(null)
-  useMasonry(grid, settings !== null)
+  useMasonry(grid, settings !== null, editing)
   useEffect(() => void window.hub.getSettings().then(setSettings), [])
+  // Another computer's changes update the cards in place; remounting the view would flash every widget.
+  useEffect(() => window.hub.onSettingsChanged(setSettings), [])
 
   if (!settings) return <p className="muted">Loading…</p>
 
