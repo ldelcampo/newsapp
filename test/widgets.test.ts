@@ -31,6 +31,15 @@ describe('dashboard settings', () => {
     expect(d.map((w) => (w.type === 'top-stories' ? w.topic : null))).toEqual(['', 'Banxico', ''])
   })
 
+  it('keeps a project and label filter on each Jira widget', () => {
+    const d = normalizeDashboard([
+      { id: 't1', type: 'tickets', size: 'medium' },
+      { id: 't2', type: 'tickets', size: 'small', project: 'OPS', label: ' billing ' }
+    ])
+    expect(d[0]).toMatchObject({ project: '', label: '' })
+    expect(d[1]).toMatchObject({ project: 'OPS', label: 'billing' })
+  })
+
   it('allows an empty dashboard', () => {
     expect(normalizeDashboard([])).toEqual([])
   })

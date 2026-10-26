@@ -4,6 +4,7 @@ import {
   ASSIGNED_JQL,
   gatewayUrl,
   FIELDS,
+  labelsOf,
   JEV_QUESTIONS,
   jevState,
   parseIssues,
@@ -216,6 +217,7 @@ export class JiraService {
       fetchedAt: this.now().toISOString(),
       tickets: rankTickets(tickets, settings.projectWeights, this.now(), ai),
       projects: projectsOf(tickets),
+      labels: labelsOf(tickets),
       problems,
       ranking: settings.ticketRanking === 'jev' && Object.keys(ai).length ? 'jev' : 'local'
     }

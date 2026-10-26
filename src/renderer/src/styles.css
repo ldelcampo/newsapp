@@ -725,3 +725,16 @@ button.chip { font: inherit; color: var(--fg); }
 .topic-tag { font-family: var(--body); font-size: 0.78rem; font-weight: 600; color: var(--accent); border: 1px solid var(--line-strong); border-radius: 99px; padding: 1px 9px; }
 .topic-filter .count { background: none; padding: 0; color: var(--muted); font-weight: 500; }
 .compact .tile-hero .article-link { font-size: 1.3rem; }
+
+/* ---------- Widget pages ---------- */
+.pager { display: inline-flex; align-items: center; gap: 8px; }
+.pager-count { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 5.5em; text-align: center; }
+.pager-dots { display: inline-flex; gap: 4px; }
+.pager-dots span { width: 6px; height: 6px; border-radius: 99px; background: var(--line-strong); transition: width 0.3s var(--ease), background 0.3s var(--ease); }
+.pager-dots span.on { width: 16px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+.widget-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.widget-foot .news-status { flex: 1 1 auto; }
+.size-small .pager-dots { display: none; }
+.paged { animation: page-in 0.35s var(--ease); }
+@keyframes page-in { from { opacity: 0; transform: translateX(8px); } }
+.widget-option .row select { flex: 1; min-width: 0; }

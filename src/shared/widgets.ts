@@ -10,7 +10,9 @@ export interface Place {
 }
 
 export type Widget =
-  | { id: string; type: 'stats' | 'meetings' | 'mail' | 'tickets'; size: WidgetSize }
+  | { id: string; type: 'stats' | 'meetings' | 'mail'; size: WidgetSize }
+  /** Empty `project` and `label` mean every ticket; otherwise only that Jira project's, or that label's. */
+  | { id: string; type: 'tickets'; size: WidgetSize; project: string; label: string }
   /** `topic` empty means all of the user's topics; any other words make a news widget of their own. */
   | { id: string; type: 'top-stories'; size: WidgetSize; topic: string }
   | { id: string; type: 'currency'; size: WidgetSize; base: string; symbols: string[] }
@@ -18,7 +20,7 @@ export type Widget =
   | { id: string; type: 'clocks'; size: WidgetSize; zones: string[] }
 
 export const WIDGET_TYPES: { type: WidgetType; label: string; description: string; size: WidgetSize }[] = [
-  { type: 'tickets', label: 'Needs you today', description: 'Your Jira tickets, most urgent first', size: 'medium' },
+  { type: 'tickets', label: 'Needs you today', description: 'Your Jira tickets, most urgent first, for all or one project or label', size: 'medium' },
   { type: 'top-stories', label: 'News', description: 'Top stories for all your topics, or just one. Add several', size: 'wide' },
   { type: 'stats', label: 'News at a glance', description: 'Stories today, topic matches and outlets', size: 'wide' },
   { type: 'currency', label: 'Exchange rates', description: 'Live market rates, the same ones Google shows', size: 'medium' },
@@ -53,6 +55,8 @@ export function newWidget(type: WidgetType, id = `${type}-${Date.now().toString(
       return { id, type, size, zones: ['America/Mexico_City', 'America/New_York', 'Europe/Madrid'] }
     case 'top-stories':
       return { id, type, size, topic: '' }
+    case 'tickets':
+      return { id, type, size, project: '', label: '' }
     default:
       return { id, type, size }
   }
@@ -99,6 +103,10 @@ export function normalizeWidget(raw: unknown): Widget | null {
     }
     case 'top-stories':
       return { ...base, size, topic: typeof r.topic === 'string' ? r.topic.trim().slice(0, 60) : '' }
+    case 'tickets': {
+      const str = (v: unknown): string => (typeof v === 'string' ? v.trim().slice(0, 100) : '')
+      return { ...base, size, project: str(r.project), label: str(r.label) }
+    }
     case 'clocks': {
       const zones = Array.isArray(r.zones) ? r.zones.filter((z): z is string => typeof z === 'string' && validZone(z)) : []
       return { ...base, size, zones: zones.length ? [...new Set(zones)].slice(0, 6) : base.zones }

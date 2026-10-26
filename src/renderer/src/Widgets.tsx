@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NewsResult } from '@shared/api'
+import { ticketsFor } from '@shared/jira'
 import { aboutTopic, filterArticles } from '@shared/ranking'
 import type { Settings } from '@shared/settings'
 import { CURRENCIES, type Place, type Rates, type Weather, type Widget, type WidgetSize } from '@shared/widgets'
@@ -8,6 +9,7 @@ import { ConnectPrompt, EventList, MailList, NextMeeting, Problems, useNow } fro
 import { useAccounts, useEvents, useMail } from './useAccounts'
 import { Icon } from './Icon'
 import { NewsStatus } from './NewsStatus'
+import { Pager, usePage } from './Pager'
 import { TicketList, TicketStatus, useTickets } from './Tickets'
 import { WeatherScene } from './WeatherScene'
 
@@ -50,7 +52,8 @@ const STORY_COUNT: Record<WidgetSize, number> = { small: 3, medium: 5, wide: 7 }
 function TopStories({ ctx, size, topic }: { ctx: WidgetContext; size: WidgetSize; topic: string }): React.JSX.Element {
   const { settings, news, loading, reload, onOpen } = ctx
   const all = news?.articles ?? []
-  const list = (topic ? aboutTopic(all, topic) : filterArticles(all, { onlyMatches: settings.onlyMyTopics })).slice(0, STORY_COUNT[size])
+  const list = topic ? aboutTopic(all, topic) : filterArticles(all, { onlyMatches: settings.onlyMyTopics })
+  const p = usePage(list, STORY_COUNT[size])
   return (
     <>
       <header className="card-head">
@@ -82,25 +85,34 @@ function TopStories({ ctx, size, topic }: { ctx: WidgetContext; size: WidgetSize
       ) : list.length === 0 ? (
         <p className="muted">{topic ? `No stories about ${topic} right now.` : settings.onlyMyTopics ? 'No stories match your topics right now.' : 'No stories yet.'}</p>
       ) : size === 'wide' ? (
-        <ArticleMosaic articles={list} compact />
+        <div className="paged" key={p.at}>
+          <ArticleMosaic articles={p.page} compact />
+        </div>
       ) : (
-        <ArticleList articles={list} ranked={size !== 'small'} compact={size === 'small'} />
+        <div className="paged" key={p.at}>
+          <ArticleList articles={p.page} ranked={size !== 'small' && p.at === 0} compact={size === 'small'} />
+        </div>
       )}
-      {size !== 'small' && <NewsStatus news={news} loading={loading} reload={reload} />}
+      <div className="widget-foot">
+        {size !== 'small' && <NewsStatus news={news} loading={loading} reload={reload} />}
+        <Pager {...p} total={list.length} perPage={STORY_COUNT[size]} label="Stories" />
+      </div>
     </>
   )
 }
 
-function NeedsYou({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JSX.Element {
+function NeedsYou({ ctx, size, project, label }: { ctx: WidgetContext; size: WidgetSize; project: string; label: string }): React.JSX.Element {
   const connected = ctx.settings.jiraSites.length > 0
   const t = useTickets(connected)
-  const tickets = t.result?.tickets ?? []
+  const tickets = ticketsFor(t.result?.tickets ?? [], { project, label })
   const now = tickets.filter((x) => x.urgency === 'now').length
+  const p = usePage(tickets, STORY_COUNT[size])
+  const projectName = t.result?.projects.find((x) => x.key === project)?.name
   return (
     <>
       <header className="card-head">
         <h2>
-          <Icon name="work" /> Needs you today
+          <Icon name="work" /> {project || label ? [projectName ?? project, label && `#${label}`].filter(Boolean).join(' · ') : 'Needs you today'}
           {now > 0 && <span className="pill urgent">{now}</span>}
         </h2>
         {connected && (
@@ -119,11 +131,18 @@ function NeedsYou({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): Reac
       ) : t.loading && !t.result ? (
         <ArticleSkeleton rows={STORY_COUNT[size]} />
       ) : tickets.length ? (
-        <TicketList tickets={tickets.slice(0, STORY_COUNT[size])} compact={size === 'small'} />
+        <div className="paged" key={p.at}>
+          <TicketList tickets={p.page} compact={size === 'small'} />
+        </div>
       ) : (
-        <p className="muted">{t.result ? 'Nothing open is assigned to you. Nice.' : ''}</p>
+        <p className="muted">{!t.result ? '' : project || label ? 'Nothing open here is assigned to you.' : 'Nothing open is assigned to you. Nice.'}</p>
       )}
-      {connected && size !== 'small' && <TicketStatus {...t} />}
+      {connected && (
+        <div className="widget-foot">
+          {size !== 'small' && <TicketStatus {...t} />}
+          <Pager {...p} total={tickets.length} perPage={STORY_COUNT[size]} label="Tickets" />
+        </div>
+      )}
       {connected && size === 'small' && (t.error || t.result?.problems.length) ? <p className="problems small">{t.error || t.result?.problems[0]}</p> : null}
     </>
   )
@@ -292,7 +311,7 @@ export function WidgetBody({ widget, ctx }: { widget: Widget; ctx: WidgetContext
     case 'stats':
       return <Stats ctx={ctx} />
     case 'tickets':
-      return <NeedsYou ctx={ctx} size={widget.size} />
+      return <NeedsYou ctx={ctx} size={widget.size} project={widget.project} label={widget.label} />
     case 'currency':
       return <Currency widget={widget} />
     case 'weather':
@@ -314,6 +333,7 @@ function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JS
   const withMail = accounts?.filter((a) => a.mail) ?? []
   const today = feed?.items.filter((m) => m.urgency === 'now').length ?? 0
   const unread = feed?.items.filter((m) => m.unread).length ?? 0
+  const p = usePage(feed?.items ?? [], MAIL_COUNT[size])
   return (
     <>
       <header className="card-head">
@@ -335,7 +355,12 @@ function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JS
         <>
           {error && <p className="error small">Couldn’t load mail: {error}</p>}
           {feed && feed.items.length === 0 && <p className="muted">Your inbox is empty.</p>}
-          {feed && <MailList mail={feed.items.slice(0, MAIL_COUNT[size])} accounts={withMail} compact={size === 'small'} />}
+          {feed && (
+            <div className="paged" key={p.at}>
+              <MailList mail={p.page} accounts={withMail} compact={size === 'small'} />
+            </div>
+          )}
+          {feed && <Pager {...p} total={feed.items.length} perPage={MAIL_COUNT[size]} label="Mail" />}
           {feed && <Problems problems={feed.problems} />}
         </>
       )}
@@ -500,8 +525,39 @@ function TopicPicker({ topic, topics, onPick }: { topic: string; topics: string[
   )
 }
 
+function TicketFilter({ widget, onChange }: { widget: Extract<Widget, { type: 'tickets' }>; onChange: (w: Widget) => void }): React.JSX.Element {
+  const t = useTickets(true)
+  const projects = t.result?.projects ?? []
+  const labels = t.result?.labels ?? []
+  return (
+    <div className="widget-option">
+      <span className="small muted">Show tickets from</span>
+      <div className="row">
+        <select aria-label="Project" value={widget.project} onChange={(e) => onChange({ ...widget, project: e.target.value })}>
+          <option value="">All projects</option>
+          {[...projects, ...(widget.project && !projects.some((p) => p.key === widget.project) ? [{ key: widget.project, name: widget.project, count: 0 }] : [])].map((p) => (
+            <option key={p.key} value={p.key}>
+              {p.key} · {p.name} ({p.count})
+            </option>
+          ))}
+        </select>
+        <select aria-label="Label" value={widget.label} onChange={(e) => onChange({ ...widget, label: e.target.value })}>
+          <option value="">Any label</option>
+          {[...labels, ...(widget.label && !labels.some((l) => l.name === widget.label) ? [{ name: widget.label, count: 0 }] : [])].map((l) => (
+            <option key={l.name} value={l.name}>
+              {l.name} ({l.count})
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  )
+}
+
 export function WidgetOptions({ widget, topics, onChange }: { widget: Widget; topics: string[]; onChange: (w: Widget) => void }): React.JSX.Element | null {
   switch (widget.type) {
+    case 'tickets':
+      return <TicketFilter widget={widget} onChange={onChange} />
     case 'top-stories':
       return <TopicPicker topic={widget.topic} topics={topics} onPick={(topic) => onChange({ ...widget, topic })} />
     case 'currency':
