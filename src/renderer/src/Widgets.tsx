@@ -238,7 +238,8 @@ function Currency({ widget }: { widget: Extract<Widget, { type: 'currency' }> })
 
 function WeatherCard({ widget }: { widget: Extract<Widget, { type: 'weather' }> }): React.JSX.Element {
   const p = widget.place
-  const { data, error } = useLoad<Weather>(`${p.latitude},${p.longitude}`, () => window.hub.weather(p))
+  // The main process caches weather for 30 minutes, so asking every 10 picks up each update soon after.
+  const { data, error } = useLoad<Weather>(`${p.latitude},${p.longitude}`, () => window.hub.weather(p), 10 * 60_000)
   return (
     <>
       <h2>
