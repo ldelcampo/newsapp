@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { feedUrl, parseFeed, toArticles } from '../src/shared/feed-parser'
 import type { Article, Source } from '../src/shared/news'
-import { filterArticles, rankArticles, topicScore } from '../src/shared/ranking'
+import { aboutTopic, filterArticles, rankArticles, topicScore } from '../src/shared/ranking'
 import { normalizeSettings } from '../src/shared/settings'
 
 const fixture = (name: string): string => readFileSync(join(__dirname, 'fixtures', name), 'utf8')
@@ -154,5 +154,19 @@ describe('custom sources in settings', () => {
     })
     expect(s.customSources).toEqual([{ id: 'r', name: 'Reforma', url: 'https://reforma.example/rss', language: 'es', region: 'Global', lean: 'unrated' }])
     expect(s.newsServerUrl).toBe('https://news.example.com')
+  })
+})
+
+describe('aboutTopic', () => {
+  it('finds stories on any topic, headline matches first, even one the user never saved', () => {
+    const now = new Date()
+    const list = rankArticles(
+      [art('Markets calm', 0, 'en', 'Banxico held rates'), art('Football results', 1), art('Banxico cuts rates', 2)],
+      ['football'],
+      ['en'],
+      now
+    )
+    expect(aboutTopic(list, 'Banxico').map((a) => a.title)).toEqual(['Banxico cuts rates', 'Markets calm'])
+    expect(aboutTopic(list, '  ')).toHaveLength(3)
   })
 })

@@ -10,14 +10,16 @@ export interface Place {
 }
 
 export type Widget =
-  | { id: string; type: 'top-stories' | 'stats' | 'meetings' | 'mail' | 'tickets'; size: WidgetSize }
+  | { id: string; type: 'stats' | 'meetings' | 'mail' | 'tickets'; size: WidgetSize }
+  /** `topic` empty means all of the user's topics; any other words make a news widget of their own. */
+  | { id: string; type: 'top-stories'; size: WidgetSize; topic: string }
   | { id: string; type: 'currency'; size: WidgetSize; base: string; symbols: string[] }
   | { id: string; type: 'weather'; size: WidgetSize; place: Place }
   | { id: string; type: 'clocks'; size: WidgetSize; zones: string[] }
 
 export const WIDGET_TYPES: { type: WidgetType; label: string; description: string; size: WidgetSize }[] = [
   { type: 'tickets', label: 'Needs you today', description: 'Your Jira tickets, most urgent first', size: 'medium' },
-  { type: 'top-stories', label: 'Top stories', description: 'The most relevant news for your topics', size: 'wide' },
+  { type: 'top-stories', label: 'News', description: 'Top stories for all your topics, or just one. Add several', size: 'wide' },
   { type: 'stats', label: 'News at a glance', description: 'Stories today, topic matches and outlets', size: 'wide' },
   { type: 'currency', label: 'Exchange rates', description: 'Daily reference rates from the European Central Bank', size: 'medium' },
   { type: 'weather', label: 'Weather', description: 'Current weather and today’s range for a place', size: 'small' },
@@ -49,6 +51,8 @@ export function newWidget(type: WidgetType, id = `${type}-${Date.now().toString(
       return { id, type, size, place: MEXICO_CITY }
     case 'clocks':
       return { id, type, size, zones: ['America/Mexico_City', 'America/New_York', 'Europe/Madrid'] }
+    case 'top-stories':
+      return { id, type, size, topic: '' }
     default:
       return { id, type, size }
   }
@@ -93,6 +97,8 @@ export function normalizeWidget(raw: unknown): Widget | null {
       const ok = typeof p.name === 'string' && p.name && Math.abs(Number(p.latitude)) <= 90 && Math.abs(Number(p.longitude)) <= 180
       return { ...base, size, place: ok ? { name: p.name as string, latitude: Number(p.latitude), longitude: Number(p.longitude) } : base.place }
     }
+    case 'top-stories':
+      return { ...base, size, topic: typeof r.topic === 'string' ? r.topic.trim().slice(0, 60) : '' }
     case 'clocks': {
       const zones = Array.isArray(r.zones) ? r.zones.filter((z): z is string => typeof z === 'string' && validZone(z)) : []
       return { ...base, size, zones: zones.length ? [...new Set(zones)].slice(0, 6) : base.zones }

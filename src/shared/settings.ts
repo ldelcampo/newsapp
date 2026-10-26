@@ -5,6 +5,7 @@ import { LEANS, type Source } from './news'
 import { DEFAULT_DASHBOARD, normalizeDashboard, type Widget } from './widgets'
 
 export type Theme = 'system' | 'light' | 'dark'
+export type NewsLayout = 'mosaic' | 'list'
 
 export interface Settings {
   displayName: string
@@ -13,6 +14,8 @@ export interface Settings {
   topics: string[]
   /** Show only stories that match the topics, on the dashboard and in News. */
   onlyMyTopics: boolean
+  /** How the News view lays out stories. */
+  newsLayout: NewsLayout
   /** ISO 639-1 codes of the languages news may be in. */
   newsLanguages: string[]
   /** Where the shared news server runs; empty means this computer fetches the feeds itself. */
@@ -42,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   topics: [],
   onlyMyTopics: false,
+  newsLayout: 'mosaic',
   newsLanguages: ['en'],
   newsServerUrl: '',
   customSources: [],
@@ -94,6 +98,7 @@ export function normalizeSettings(raw: unknown): Settings {
     theme,
     topics: strings(r.topics) ?? DEFAULT_SETTINGS.topics,
     onlyMyTopics: r.onlyMyTopics === true,
+    newsLayout: r.newsLayout === 'list' ? 'list' : 'mosaic',
     newsLanguages: langs && langs.length > 0 ? langs : DEFAULT_SETTINGS.newsLanguages,
     newsServerUrl:
       typeof r.newsServerUrl === 'string' && (r.newsServerUrl.trim() === '' || /^https?:\/\//.test(r.newsServerUrl.trim()))

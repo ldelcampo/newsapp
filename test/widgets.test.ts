@@ -22,6 +22,15 @@ describe('dashboard settings', () => {
     expect(d[2]).toMatchObject({ place: { name: 'Mexico City' } })
   })
 
+  it('keeps a topic on each news widget', () => {
+    const d = normalizeDashboard([
+      { id: 'n1', type: 'top-stories', size: 'wide' },
+      { id: 'n2', type: 'top-stories', size: 'medium', topic: '  Banxico ' },
+      { id: 'n3', type: 'top-stories', size: 'small', topic: 42 }
+    ])
+    expect(d.map((w) => (w.type === 'top-stories' ? w.topic : null))).toEqual(['', 'Banxico', ''])
+  })
+
   it('allows an empty dashboard', () => {
     expect(normalizeDashboard([])).toEqual([])
   })

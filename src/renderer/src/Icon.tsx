@@ -30,6 +30,8 @@ const PATHS: Record<string, string> = {
   clocks: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-13v4l3 2',
   work: 'M4 8h16v11H4V8Zm5 0V5h6v3M4 13h16',
   tickets: 'M4 8h16v11H4V8Zm5 0V5h6v3M4 13h16',
+  mosaic: 'M4 4h9v9H4V4Zm12 0h4v5h-4V4Zm0 8h4v8h-4v-8ZM4 16h9v4H4v-4Z',
+  list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
   meetings: 'M5 5h14v15H5V5Zm0 5h14M9 3v4m6-4v4'
 }
 

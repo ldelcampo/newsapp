@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { NewsResult } from '@shared/api'
-import { filterArticles } from '@shared/ranking'
+import { aboutTopic, filterArticles } from '@shared/ranking'
 import type { Settings } from '@shared/settings'
 import { CURRENCIES, type Place, type Rates, type Weather, type Widget, type WidgetSize } from '@shared/widgets'
-import { ArticleList, ArticleSkeleton } from './ArticleList'
+import { ArticleList, ArticleMosaic, ArticleSkeleton } from './ArticleList'
 import { ConnectPrompt, EventList, MailList, NextMeeting, Problems, useNow } from './Inbox'
 import { useAccounts, useEvents, useMail } from './useAccounts'
 import { Icon } from './Icon'
@@ -36,23 +36,30 @@ function useLoad<T>(key: string, load: () => Promise<T>): { data: T | null; erro
   return { data, error }
 }
 
-const STORY_COUNT: Record<WidgetSize, number> = { small: 3, medium: 5, wide: 6 }
+const STORY_COUNT: Record<WidgetSize, number> = { small: 3, medium: 5, wide: 7 }
 
-function TopStories({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JSX.Element {
+function TopStories({ ctx, size, topic }: { ctx: WidgetContext; size: WidgetSize; topic: string }): React.JSX.Element {
   const { settings, news, loading, reload, onOpen } = ctx
-  const list = filterArticles(news?.articles ?? [], { onlyMatches: settings.onlyMyTopics }).slice(0, STORY_COUNT[size])
+  const all = news?.articles ?? []
+  const list = (topic ? aboutTopic(all, topic) : filterArticles(all, { onlyMatches: settings.onlyMyTopics })).slice(0, STORY_COUNT[size])
   return (
     <>
       <header className="card-head">
         <h2>
           <span className="live" aria-hidden="true" />
-          Top stories
+          {topic ? (
+            <>
+              {topic} <span className="topic-tag">Topic</span>
+            </>
+          ) : (
+            'Top stories'
+          )}
         </h2>
         <button className="link" onClick={() => onOpen('news')}>
           All news <Icon name="arrow" />
         </button>
       </header>
-      {settings.topics.length === 0 && (
+      {!topic && settings.topics.length === 0 && (
         <p className="hint">
           Showing the newest stories.{' '}
           <button className="link" onClick={() => onOpen('settings')}>
@@ -63,10 +70,12 @@ function TopStories({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): Re
       )}
       {loading && !news ? (
         <ArticleSkeleton rows={STORY_COUNT[size]} />
-      ) : list.length > 0 ? (
-        <ArticleList articles={list} ranked={size !== 'small'} compact={size === 'small'} />
+      ) : list.length === 0 ? (
+        <p className="muted">{topic ? `No stories about ${topic} right now.` : settings.onlyMyTopics ? 'No stories match your topics right now.' : 'No stories yet.'}</p>
+      ) : size === 'wide' ? (
+        <ArticleMosaic articles={list} compact />
       ) : (
-        <p className="muted">{settings.onlyMyTopics ? 'No stories match your topics right now.' : 'No stories yet.'}</p>
+        <ArticleList articles={list} ranked={size !== 'small'} compact={size === 'small'} />
       )}
       {size !== 'small' && <NewsStatus news={news} loading={loading} reload={reload} />}
     </>
@@ -266,7 +275,7 @@ function Clocks({ widget }: { widget: Extract<Widget, { type: 'clocks' }> }): Re
 export function WidgetBody({ widget, ctx }: { widget: Widget; ctx: WidgetContext }): React.JSX.Element {
   switch (widget.type) {
     case 'top-stories':
-      return <TopStories ctx={ctx} size={widget.size} />
+      return <TopStories ctx={ctx} size={widget.size} topic={widget.topic} />
     case 'stats':
       return <Stats ctx={ctx} />
     case 'tickets':
@@ -452,8 +461,36 @@ const ZONES: string[] = (() => {
   }
 })()
 
-export function WidgetOptions({ widget, onChange }: { widget: Widget; onChange: (w: Widget) => void }): React.JSX.Element | null {
+function TopicPicker({ topic, topics, onPick }: { topic: string; topics: string[]; onPick: (t: string) => void }): React.JSX.Element {
+  const [typed, setTyped] = useState('')
+  const pick = (t: string): void => {
+    onPick(t.trim())
+    setTyped('')
+  }
+  return (
+    <div className="widget-option">
+      <span className="small muted">Topic</span>
+      <div className="chips">
+        {['', ...topics, ...(topic && !topics.includes(topic) ? [topic] : [])].map((t) => (
+          <button type="button" key={t || 'all'} className={topic === t ? 'chip on' : 'chip'} aria-pressed={topic === t} onClick={() => pick(t)}>
+            {t || 'All my topics'}
+          </button>
+        ))}
+      </div>
+      <div className="row">
+        <input aria-label="Any other topic" placeholder="Or type any topic, like “Banxico” or “Fórmula 1”" value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && typed.trim() && pick(typed)} />
+        <button type="button" className="ghost" disabled={!typed.trim()} onClick={() => pick(typed)}>
+          Use
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function WidgetOptions({ widget, topics, onChange }: { widget: Widget; topics: string[]; onChange: (w: Widget) => void }): React.JSX.Element | null {
   switch (widget.type) {
+    case 'top-stories':
+      return <TopicPicker topic={widget.topic} topics={topics} onPick={(topic) => onChange({ ...widget, topic })} />
     case 'currency':
       return (
         <>

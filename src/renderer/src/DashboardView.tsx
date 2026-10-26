@@ -32,7 +32,15 @@ function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean)
 }
 
 /** Widget types that only make sense once on a dashboard. */
-const SINGLE: WidgetType[] = ['top-stories', 'stats', 'meetings', 'mail', 'tickets']
+const SINGLE: WidgetType[] = ['stats', 'meetings', 'mail', 'tickets']
+
+/** A second news widget starts on one of the user's topics no other news widget shows yet. */
+function withFreeTopic(w: Widget, widgets: Widget[], topics: string[]): Widget {
+  if (w.type !== 'top-stories') return w
+  const taken = widgets.flatMap((x) => (x.type === 'top-stories' ? [x.topic] : []))
+  if (taken.length === 0) return w
+  return { ...w, size: 'medium', topic: topics.find((t) => !taken.includes(t)) ?? '' }
+}
 
 export function DashboardView({ onOpen }: { onOpen: WidgetContext['onOpen'] }): React.JSX.Element {
   const { news, loading, reload } = useNews()
@@ -134,7 +142,7 @@ export function DashboardView({ onOpen }: { onOpen: WidgetContext['onOpen'] }): 
             </div>
           )}
           <WidgetBody widget={w} ctx={ctx} />
-          {editing && <WidgetOptions widget={w} onChange={replace} />}
+          {editing && <WidgetOptions widget={w} topics={settings.topics} onChange={replace} />}
         </section>
       ))}
 
@@ -145,7 +153,7 @@ export function DashboardView({ onOpen }: { onOpen: WidgetContext['onOpen'] }): 
           </h2>
           <div className="widget-catalog">
             {addable.map((t) => (
-              <button key={t.type} type="button" className="catalog-item" onClick={() => setWidgets([...widgets, newWidget(t.type)])}>
+              <button key={t.type} type="button" className="catalog-item" onClick={() => setWidgets([...widgets, withFreeTopic(newWidget(t.type), widgets, settings.topics)])}>
                 <Icon name={t.type === 'top-stories' ? 'stories' : t.type} />
                 <span>
                   <b>{t.label}</b>

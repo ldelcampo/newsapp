@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { filterArticles, PRIORITIES, type Priority } from '@shared/ranking'
-import type { Settings } from '@shared/settings'
-import { ArticleList, ArticleSkeleton } from './ArticleList'
+import type { NewsLayout, Settings } from '@shared/settings'
+import { ArticleList, ArticleMosaic, ArticleSkeleton } from './ArticleList'
+import { Icon } from './Icon'
 import { NewsStatus } from './NewsStatus'
 import { useNews } from './useNews'
 
@@ -19,6 +20,14 @@ export function NewsView(): React.JSX.Element {
       setOnlyMatches(s.onlyMyTopics)
     })
   }, [])
+
+  const layout = settings?.newsLayout ?? 'mosaic'
+  const setLayout = (newsLayout: NewsLayout): void => {
+    if (!settings) return
+    const next = { ...settings, newsLayout }
+    setSettings(next)
+    void window.hub.saveSettings(next)
+  }
 
   const all = news?.articles ?? []
   const list = filterArticles(all, { onlyMatches, topic, minPriority, query })
@@ -59,11 +68,28 @@ export function NewsView(): React.JSX.Element {
       )}
 
       <section className="card enter" style={{ '--i': 2 } as React.CSSProperties}>
-        <p className="muted small" aria-live="polite">
-          {loading && !news ? 'Loading stories…' : `${list.length} of ${all.length} stories`}
-          {minPriority !== 'low' && ` · ${PRIORITIES.find((p) => p.value === minPriority)?.label}${minPriority === 'medium' ? ' and high' : ''} priority`}
-        </p>
-        {loading && !news ? <ArticleSkeleton rows={8} /> : list.length > 0 ? <ArticleList articles={list} /> : <p className="muted">No stories match these filters.</p>}
+        <div className="card-head">
+          <p className="muted small" aria-live="polite">
+            {loading && !news ? 'Loading stories…' : `${list.length} of ${all.length} stories`}
+            {minPriority !== 'low' && ` · ${PRIORITIES.find((p) => p.value === minPriority)?.label}${minPriority === 'medium' ? ' and high' : ''} priority`}
+          </p>
+          <div className="sizes layout-switch" role="group" aria-label="Layout">
+            {(['mosaic', 'list'] as const).map((l) => (
+              <button type="button" key={l} className={layout === l ? 'on' : ''} aria-pressed={layout === l} onClick={() => setLayout(l)}>
+                <Icon name={l} /> {l === 'mosaic' ? 'Mosaic' : 'List'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {loading && !news ? (
+          <ArticleSkeleton rows={8} />
+        ) : list.length === 0 ? (
+          <p className="muted">No stories match these filters.</p>
+        ) : layout === 'mosaic' ? (
+          <ArticleMosaic articles={list} />
+        ) : (
+          <ArticleList articles={list} />
+        )}
       </section>
     </div>
   )

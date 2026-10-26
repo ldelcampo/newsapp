@@ -35,6 +35,7 @@ describe('SettingsStore', () => {
       newsLanguages: ['es', 'en'],
       theme: 'dark',
       onlyMyTopics: false,
+      newsLayout: 'mosaic',
       newsServerUrl: '',
       customSources: [],
       dashboard: DEFAULT_SETTINGS.dashboard,
