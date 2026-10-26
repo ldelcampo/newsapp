@@ -12,6 +12,7 @@ export interface SyncKeys {
  * database can't be used to guess passphrases quickly.
  */
 export function deriveKeys(email: string, passphrase: string): SyncKeys {
+  // The salt keeps the app's old name: changing it would lock every account out of its data.
   const master = scryptSync(passphrase.normalize('NFKC'), `information-hub:${email.trim().toLowerCase()}`, 32, { N: 1 << 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
   const part = (info: string): Buffer => Buffer.from(hkdfSync('sha256', master, Buffer.alloc(0), info, 32))
   return { authKey: part('auth').toString('base64'), encKey: part('encrypt') }

@@ -1,5 +1,5 @@
 appId: com.ldelcampo.newsapp
-productName: Information Hub
+productName: Atalia
 directories:
   output: dist
 afterPack: build/after-pack.cjs
@@ -15,7 +15,7 @@ mac:
   # build/after-pack.cjs applies an ad-hoc signature.
   category: public.app-category.productivity
   # No spaces, so the names GitHub gives uploaded files match latest-mac.yml.
-  artifactName: InformationHub-${version}-${arch}-mac.${ext}
+  artifactName: Atalia-${version}-${arch}-mac.${ext}
 linux:
   target: AppImage
   category: Office

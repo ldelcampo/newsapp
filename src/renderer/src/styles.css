@@ -107,10 +107,9 @@ code { font-family: var(--mono); font-size: 0.85em; }
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 22px; font-family: var(--display); font-size: 1.02rem; }
 .brand b { background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.brand-mark {
-  width: 22px; height: 22px; border-radius: 7px; background: conic-gradient(from 0deg, var(--accent), var(--accent-2), var(--accent));
-  box-shadow: 0 0 18px var(--glow-a); animation: rotate 8s linear infinite;
-}
+.brand-mark { width: 24px; height: 24px; flex: none; filter: drop-shadow(0 0 10px var(--glow-a)); }
+.brand-lamp { transform-origin: 50px 60px; animation: lamp 3.2s ease-in-out infinite; }
+@keyframes lamp { 50% { opacity: .65; transform: scale(.85); } }
 @keyframes rotate { to { transform: rotate(360deg); } }
 
 .nav {
@@ -288,7 +287,7 @@ input::placeholder { color: var(--muted); opacity: 0.7; }
 .add-source { border: 1px dashed var(--line-strong); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; margin: 0; }
 .add-source legend { font-weight: 600; padding: 0 6px; }
 
-@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 76px 1fr; } .brand span, .nav { font-size: 0; } .nav { justify-content: center; } .nav .icon { width: 20px; height: 20px; } }
+@media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } .shell { grid-template-columns: 76px 1fr; } .brand b, .nav { font-size: 0; } .nav { justify-content: center; } .nav .icon { width: 20px; height: 20px; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Atalia app icon. macOS grid: 824px rounded square centred on a 1024 canvas. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34247a"/>
+      <stop offset="1" stop-color="#140d30"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0" stop-color="#ffe0a0"/>
+      <stop offset="1" stop-color="#ff9b5a"/>
+    </radialGradient>
+    <radialGradient id="halo">
+      <stop offset="0" stop-color="#ffb86b" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#ffb86b" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <g transform="translate(100 100) scale(8.24)">
+    <rect width="100" height="100" rx="22.4" fill="url(#bg)" filter="url(#shadow)"/>
+    <path d="M22 84 L44 18 L56 18 L78 84 L64 84 L50 38 L36 84 Z" fill="#f3ecdf"/>
+    <circle cx="50" cy="60" r="20" fill="url(#halo)"/>
+    <circle cx="50" cy="60" r="8.5" fill="url(#lamp)"/>
+  </g>
+</svg>

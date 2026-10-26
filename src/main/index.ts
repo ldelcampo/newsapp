@@ -45,7 +45,7 @@ function createWindow(): void {
     minWidth: 720,
     minHeight: 520,
     show: false,
-    title: 'Information Hub',
+    title: 'Atalia',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -68,6 +68,9 @@ function createWindow(): void {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
+
+// The app was called Information Hub. Keep its data folder so settings and accounts carry over.
+app.setPath('userData', join(app.getPath('appData'), 'Information Hub'))
 
 app.whenReady().then(() => {
   store = new SettingsStore(app.getPath('userData'))
