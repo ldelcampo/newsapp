@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { JEV_URL, JiraService, jiraSecret, JEV_SECRET } from '../src/main/jira-service'
 import { SecretStore } from '../src/main/secrets'
-import { cleanSiteUrl, parseIssues, parseJev, plainText, rankTickets, siteKind, type JiraSite, type Ticket } from '../src/shared/jira'
+import { cleanSiteUrl, labelsOf, parseIssues, ticketsFor, parseJev, plainText, rankTickets, siteKind, type JiraSite, type Ticket } from '../src/shared/jira'
 import { normalizeSettings } from '../src/shared/settings'
 
 const site: JiraSite = { id: 's1', url: 'https://acme.atlassian.net', kind: 'cloud', email: 'luis@acme.com', name: 'Luis' }
@@ -275,5 +275,17 @@ describe('making a task from mail', () => {
   it('explains a project that doesn’t exist', async () => {
     const { svc } = setup()
     await expect(svc.createTask(settings, 's1', 'NOPE', 'x', 'y')).rejects.toThrow(/no project NOPE/)
+  })
+})
+
+describe('ticket widgets', () => {
+  it('reads labels and filters by project or label', () => {
+    const list = [ticket('OPS-1', { labels: ['urgent', 'billing'] }), ticket('OPS-2', { labels: ['billing'] }), ticket('WEB-1'), ticket('WEB-2', { labels: 'nope' })]
+    expect(list[3].labels).toEqual([])
+    expect(labelsOf(list)).toEqual([{ name: 'billing', count: 2 }, { name: 'urgent', count: 1 }])
+    expect(ticketsFor(list, { project: 'OPS', label: '' }).map((t) => t.key)).toEqual(['OPS-1', 'OPS-2'])
+    expect(ticketsFor(list, { project: '', label: 'urgent' }).map((t) => t.key)).toEqual(['OPS-1'])
+    expect(ticketsFor(list, { project: 'WEB', label: 'billing' })).toEqual([])
+    expect(ticketsFor(list, { project: '', label: '' })).toHaveLength(4)
   })
 })

@@ -52,6 +52,7 @@ export interface Ticket {
   blocks: number
   /** true: assigned to the user; false: only watched. */
   assigned: boolean
+  labels: string[]
 }
 
 export type Urgency = 'now' | 'soon' | 'later'
@@ -67,6 +68,8 @@ export interface TicketResult {
   fetchedAt: string
   tickets: RankedTicket[]
   projects: { key: string; name: string; count: number }[]
+  /** Labels on the user's tickets, most used first. */
+  labels: { name: string; count: number }[]
   problems: string[]
   ranking: TicketRanking
 }
@@ -92,7 +95,7 @@ export function normalizeSite(raw: unknown): JiraSite | null {
   return { id: str(r.id), url, kind: siteKind(url), email: str(r.email), name: str(r.name), ...(apiUrl ? { apiUrl } : {}) }
 }
 
-export const FIELDS = ['summary', 'status', 'priority', 'duedate', 'updated', 'project', 'issuetype', 'issuelinks', 'description']
+export const FIELDS = ['summary', 'status', 'priority', 'duedate', 'updated', 'project', 'issuetype', 'issuelinks', 'description', 'labels']
 
 export const ASSIGNED_JQL = 'assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC, updated DESC'
 export const WATCHING_JQL =
@@ -149,7 +152,8 @@ export function parseIssues(json: unknown, site: JiraSite, assigned: boolean): T
         due: typeof f.duedate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f.duedate) ? f.duedate : null,
         updated: typeof f.updated === 'string' ? f.updated : '',
         blocks,
-        assigned
+        assigned,
+        labels: Array.isArray(f.labels) ? f.labels.filter((l: unknown): l is string => typeof l === 'string') : []
       }
     ]
   })
@@ -277,4 +281,15 @@ export function parseJev(json: unknown): AiSignal {
     waiting: Number.isFinite(waiting) ? Math.max(0, Math.min(1, waiting)) : 0,
     confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0.5
   }
+}
+
+export function labelsOf(tickets: Ticket[]): TicketResult['labels'] {
+  const map = new Map<string, number>()
+  for (const t of tickets) for (const l of t.labels ?? []) map.set(l, (map.get(l) ?? 0) + 1)
+  return [...map].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+}
+
+/** Tickets one dashboard widget shows: all of them, or one project's, or those with one label. */
+export function ticketsFor<T extends Ticket>(tickets: T[], f: { project: string; label: string }): T[] {
+  return tickets.filter((t) => (!f.project || t.project.key === f.project) && (!f.label || (t.labels ?? []).includes(f.label)))
 }

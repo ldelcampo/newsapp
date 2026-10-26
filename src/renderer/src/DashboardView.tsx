@@ -32,7 +32,7 @@ function useMasonry(ref: React.RefObject<HTMLDivElement | null>, ready: boolean)
 }
 
 /** Widget types that only make sense once on a dashboard. */
-const SINGLE: WidgetType[] = ['stats', 'meetings', 'mail', 'tickets']
+const SINGLE: WidgetType[] = ['stats', 'meetings', 'mail']
 
 /** A second news widget starts on one of the user's topics no other news widget shows yet. */
 function withFreeTopic(w: Widget, widgets: Widget[], topics: string[]): Widget {
