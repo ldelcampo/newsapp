@@ -21,7 +21,7 @@ export const WIDGET_TYPES: { type: WidgetType; label: string; description: strin
   { type: 'tickets', label: 'Needs you today', description: 'Your Jira tickets, most urgent first', size: 'medium' },
   { type: 'top-stories', label: 'News', description: 'Top stories for all your topics, or just one. Add several', size: 'wide' },
   { type: 'stats', label: 'News at a glance', description: 'Stories today, topic matches and outlets', size: 'wide' },
-  { type: 'currency', label: 'Exchange rates', description: 'Daily reference rates from the European Central Bank', size: 'medium' },
+  { type: 'currency', label: 'Exchange rates', description: 'Live market rates, the same ones Google shows', size: 'medium' },
   { type: 'weather', label: 'Weather', description: 'Current weather and today’s range for a place', size: 'small' },
   { type: 'clocks', label: 'World clocks', description: 'The time in the cities you work with', size: 'small' },
   { type: 'meetings', label: 'Next meetings', description: 'Countdown to your next meeting, across calendars', size: 'medium' },
@@ -34,7 +34,7 @@ export const SIZES: { value: WidgetSize; label: string }[] = [
   { value: 'wide', label: 'Wide' }
 ]
 
-/** Currencies the ECB publishes reference rates for. */
+/** Currencies offered in the widget: all quoted live, and by the ECB as a fallback. */
 export const CURRENCIES = [
   'USD', 'EUR', 'MXN', 'GBP', 'JPY', 'CAD', 'CHF', 'CNY', 'BRL', 'AUD', 'INR', 'KRW', 'SEK', 'NOK', 'DKK',
   'PLN', 'CZK', 'HUF', 'RON', 'TRY', 'ZAR', 'NZD', 'SGD', 'HKD', 'ILS', 'IDR', 'MYR', 'PHP', 'THB', 'ISK'
@@ -118,17 +118,34 @@ export function normalizeDashboard(raw: unknown): Widget[] {
 
 export interface Rates {
   base: string
+  /** A day (YYYY-MM-DD) for ECB rates, or the moment they were fetched for market rates. */
   date: string
   rates: Record<string, number>
+  /** `market` is live mid-market (Coinbase, within ~0.05% of Google); `ecb` the daily reference. */
+  source: 'market' | 'ecb'
 }
 
-/** Frankfurter's /latest response. */
+/** Frankfurter's /latest response (ECB reference rates). */
 export function parseRates(json: unknown): Rates {
   const j = json as { base?: unknown; date?: unknown; rates?: unknown }
   if (typeof j?.base !== 'string' || typeof j.date !== 'string' || !j.rates || typeof j.rates !== 'object') throw new Error('Unexpected exchange-rate response')
   const rates: Record<string, number> = {}
   for (const [k, v] of Object.entries(j.rates)) if (typeof v === 'number') rates[k] = v
-  return { base: j.base, date: j.date, rates }
+  return { base: j.base, date: j.date, rates, source: 'ecb' }
+}
+
+/** Coinbase's /v2/exchange-rates response: every rate is a decimal string, crypto included. */
+export function parseMarketRates(json: unknown, symbols: string[], fetchedAt: number): Rates {
+  const d = (json as { data?: { currency?: unknown; rates?: unknown } })?.data
+  if (typeof d?.currency !== 'string' || !d.rates || typeof d.rates !== 'object') throw new Error('Unexpected exchange-rate response')
+  const all = d.rates as Record<string, unknown>
+  const rates: Record<string, number> = {}
+  for (const c of symbols) {
+    const v = Number(all[c])
+    if (typeof all[c] === 'string' && Number.isFinite(v) && v > 0) rates[c] = v
+  }
+  if (!Object.keys(rates).length) throw new Error('No rates for those currencies')
+  return { base: d.currency, date: new Date(fetchedAt).toISOString(), rates, source: 'market' }
 }
 
 export interface Weather {
