@@ -1,4 +1,4 @@
-/* Layout: fixed glass sidebar + scrolling content over a slowly drifting ambient glow.
+/* Layout: fixed glass sidebar + scrolling content over a still ambient glow.
    Dark is the signature look; light keeps the same structure with paper-like glass. */
 :root {
   --bg: #eef1f8;
@@ -88,17 +88,13 @@ code { font-family: var(--mono); font-size: 0.85em; }
 
 /* ---------- Ambient background ---------- */
 .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+/* The glow stays still: every frosted card re-blurs whatever is behind it, and a moving glow made
+   macOS redraw all of them each frame, which showed up as blinking. */
 .ambient::before, .ambient::after {
   content: ''; position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; filter: blur(80px);
-  animation: drift 26s var(--ease) infinite alternate; will-change: transform;
 }
 .ambient::before { background: var(--glow-a); top: -25vmax; left: 10vmax; }
-.ambient::after { background: var(--glow-b); bottom: -30vmax; right: -10vmax; animation-duration: 32s; animation-direction: alternate-reverse; }
-@keyframes drift {
-  from { transform: translate3d(0, 0, 0) scale(1); }
-  /* Moves only: scaling would re-blur the glow, and every frosted card above it, on each frame. */
-  to { transform: translate3d(8vmax, 6vmax, 0); }
-}
+.ambient::after { background: var(--glow-b); bottom: -30vmax; right: -10vmax; }
 
 /* ---------- Shell ---------- */
 .shell { position: relative; display: grid; grid-template-columns: 228px 1fr; height: 100%; }
