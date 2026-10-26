@@ -159,3 +159,17 @@ export function filterArticles(articles: RankedArticle[], f: ArticleFilter): Ran
       (!q || normalize(a.title).includes(q) || normalize(a.sourceName).includes(q))
   )
 }
+
+/**
+ * Stories about one topic, in any words: it need not be one of the user's saved topics. A saved
+ * topic also keeps the stories ranking already tagged with it, so counts agree with News.
+ */
+export function aboutTopic(articles: RankedArticle[], topic: string): RankedArticle[] {
+  const t = topic.trim()
+  if (!t) return articles
+  return articles
+    .map((a) => ({ a, m: topicMatches(a, [t]) }))
+    .filter((x) => x.m.length > 0 || x.a.topics.includes(t))
+    .sort((x, y) => Number(!!y.m[0]?.inTitle) - Number(!!x.m[0]?.inTitle))
+    .map((x) => x.a)
+}
