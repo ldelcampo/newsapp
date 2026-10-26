@@ -200,20 +200,32 @@ export function parseWeather(json: unknown): Weather {
   return { temperature: t, code, description: describeWeather(code), kind: weatherKind(code), isDay: j.current?.is_day !== 0, high, low, unit: String(j.current_units?.temperature_2m ?? '°C') }
 }
 
-/** Open-Meteo's geocoding /search response. */
+/**
+ * Open-Meteo's geocoding /search response. It lists villages before big cities ("Querétaro" puts
+ * Querétaro City tenth, after eight hamlets), so the biggest places come first, and places with
+ * the same name in the same state collapse into one.
+ */
 export function parsePlaces(json: unknown, near: string[] = []): Place[] {
   const results = (json as { results?: unknown[] })?.results ?? []
   const places = results.flatMap((r) => {
-    const x = r as { name?: unknown; latitude?: unknown; longitude?: unknown; admin1?: unknown; country?: unknown; country_code?: unknown }
+    const x = r as { name?: unknown; latitude?: unknown; longitude?: unknown; admin1?: unknown; country?: unknown; country_code?: unknown; population?: unknown }
     if (typeof x.name !== 'string' || typeof x.latitude !== 'number' || typeof x.longitude !== 'number') return []
     const where = [x.admin1, x.country].filter((s): s is string => typeof s === 'string' && s !== x.name)
     const tags = [x.admin1, x.country, x.country_code].filter((s): s is string => typeof s === 'string').map(fold)
-    return [{ place: { name: [x.name, ...where].join(', '), latitude: x.latitude, longitude: x.longitude }, tags }]
+    const population = typeof x.population === 'number' ? x.population : 0
+    return [{ place: { name: [x.name, ...where].join(', '), latitude: x.latitude, longitude: x.longitude }, tags, population }]
   })
   // "Monterrey, Mexico": keep the matches in that state or country, if any.
   const wanted = near.map(fold).filter(Boolean)
   const inside = places.filter((p) => wanted.every((w) => p.tags.some((t) => t.startsWith(w) || t === w)))
-  return (inside.length ? inside : places).map((p) => p.place)
+  const seen = new Set<string>()
+  return (inside.length ? inside : places)
+    .sort((a, b) => b.population - a.population)
+    .filter((p) => {
+      const key = fold(p.place.name)
+      return seen.has(key) ? false : (seen.add(key), true)
+    })
+    .map((p) => p.place)
 }
 
 /** Lower case without accents, so "nuevo leon" finds "Nuevo León". */

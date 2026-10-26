@@ -58,8 +58,9 @@ export class WidgetService {
   async places(query: string): Promise<Place[]> {
     const { name, near } = placeQuery(query)
     if (name.length < 2) return []
-    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=${near.length ? 20 : 6}&format=json`
-    // The raw answer is cached, since the same name can be narrowed in different ways.
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=30&format=json`
+    // Big cities can come late in the answer, so ask for many and rank them here. The raw answer
+    // is cached, since the same name can be narrowed in different ways.
     return parsePlaces(await this.cached(url, 24 * 60 * 60_000, (j) => j), near).slice(0, 6)
   }
 }
