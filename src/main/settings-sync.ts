@@ -33,6 +33,7 @@ export class FolderRemote implements Remote {
     private readonly folder: string,
     onChange: () => void
   ) {
+    // The app's old name, kept so devices on earlier versions still find each other.
     this.file = join(folder, 'Information Hub', 'settings-sync.json')
     // Polling copes with iCloud and network folders, where change events are unreliable.
     watchFile(this.file, { interval: this.pollMs }, onChange)

@@ -59,10 +59,12 @@ export function App(): React.JSX.Element {
       <div className="ambient" aria-hidden="true" />
       <nav className="sidebar" aria-label="Sections">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <span>
-            Information <b>Hub</b>
-          </span>
+          <svg className="brand-mark" viewBox="0 0 100 100" aria-hidden="true">
+            <rect width="100" height="100" rx="22.4" fill="#2a1d66" />
+            <path d="M22 84 L44 18 L56 18 L78 84 L64 84 L50 38 L36 84 Z" fill="#f3ecdf" />
+            <circle className="brand-lamp" cx="50" cy="60" r="8.5" fill="#ffb86b" />
+          </svg>
+          <b>Atalia</b>
         </div>
         {VIEWS.map((v) => (
           <button

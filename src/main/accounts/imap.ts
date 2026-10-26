@@ -33,7 +33,7 @@ function imapClient(s: ImapSettings, password: string): ImapFlow {
     connectionTimeout: TIMEOUT,
     greetingTimeout: TIMEOUT,
     socketTimeout: 60_000,
-    clientInfo: { name: 'Information Hub' }
+    clientInfo: { name: 'Atalia' }
   })
 }
 

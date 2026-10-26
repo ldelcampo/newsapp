@@ -70,8 +70,8 @@ export class MsalTokens implements MicrosoftTokens {
       // Always show the account picker, so a second Microsoft account can be added.
       prompt: 'select_account',
       openBrowser: this.openBrowser,
-      successTemplate: page('You’re signed in', 'You can close this tab and go back to Information Hub.'),
-      errorTemplate: page('Sign-in didn’t finish', 'Close this tab and try again from Information Hub.')
+      successTemplate: page('You’re signed in', 'You can close this tab and go back to Atalia.'),
+      errorTemplate: page('Sign-in didn’t finish', 'Close this tab and try again from Atalia.')
     })
     if (!result.account) throw new Error('Microsoft didn’t say which account signed in.')
     return { homeAccountId: result.account.homeAccountId, username: result.account.username, name: result.account.name ?? '' }
@@ -165,7 +165,7 @@ export class MicrosoftConnector implements Connector {
       signal: AbortSignal.timeout(15_000)
     })
     if (res.status === 401) throw new AuthExpiredError()
-    if (res.status === 403) throw new Error('Your organization doesn’t allow this app to read it. Ask your IT admin to approve Information Hub.')
+    if (res.status === 403) throw new Error('Your organization doesn’t allow this app to read it. Ask your IT admin to approve Atalia.')
     if (res.status === 429) throw new Error('Microsoft asked us to slow down. Trying again in a few minutes.')
     if (!res.ok) throw new Error(`Microsoft answered ${res.status}`)
     return res.json()

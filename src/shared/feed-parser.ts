@@ -163,7 +163,7 @@ export function toArticles(source: Source, feed: ParsedFeed, now = new Date()): 
 /** Fetches and parses one source. */
 export async function fetchSource(source: Source, timeoutMs = 15000): Promise<Article[]> {
   const res = await fetch(feedUrl(source), {
-    headers: { 'user-agent': 'InformationHub/0.1 (+https://github.com/ldelcampo/newsapp)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' },
+    headers: { 'user-agent': 'Atalia/0.1 (+https://github.com/ldelcampo/newsapp)', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*' },
     signal: AbortSignal.timeout(timeoutMs),
     redirect: 'follow'
   }).catch((e: Error) => {

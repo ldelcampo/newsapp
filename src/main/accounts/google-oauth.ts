@@ -65,9 +65,9 @@ export function authUrl(o: { client: GoogleClient; redirectUri: string; scopes: 
   return `${AUTH_URL}?${q}`
 }
 
-const DONE_PAGE = (ok: boolean): string => `<!doctype html><meta charset="utf-8"><title>Information Hub</title>
+const DONE_PAGE = (ok: boolean): string => `<!doctype html><meta charset="utf-8"><title>Atalia</title>
 <body style="font:16px system-ui;display:grid;place-items:center;height:90vh;color:#333">
-<p>${ok ? 'Signed in. You can close this tab and go back to Information Hub.' : 'Sign-in was cancelled. You can close this tab.'}</p></body>`
+<p>${ok ? 'Signed in. You can close this tab and go back to Atalia.' : 'Sign-in was cancelled. You can close this tab.'}</p></body>`
 
 /** Opens the consent page and resolves with the code Google redirects back to the loopback port. */
 export function signInInBrowser(open: (url: string) => void, makeUrl: (redirectUri: string, state: string) => string): Promise<{ code: string; redirectUri: string }> {

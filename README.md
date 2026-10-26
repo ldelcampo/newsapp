@@ -1,4 +1,4 @@
-# Information Hub
+# Atalia
 
 A desktop app for Windows, macOS and Linux that brings together your mail, calendars, work priorities and balanced, fact-checkable news, with several accounts per person.
 
@@ -32,7 +32,7 @@ The app signs in with Google's installed-app flow (OAuth with PKCE and a loopbac
 
 The build needs a Google OAuth client of type **Desktop app**:
 
-1. In [Google Cloud console](https://console.cloud.google.com/), create a project (for example "Information Hub").
+1. In [Google Cloud console](https://console.cloud.google.com/), create a project (for example "Atalia").
 2. APIs & Services, Library: enable **Gmail API** and **Google Calendar API**.
 3. Google Auth Platform: get started with User type **External**. Under Data access, add the scopes `gmail.modify`, `gmail.send`, `calendar.readonly`, `openid`, `email` and `profile`. Under Audience, add each tester's Google address as a test user (up to 100).
 4. Google Auth Platform, Clients: create a client with application type **Desktop app**. Copy its client ID and client secret.
@@ -44,7 +44,7 @@ Google treats a Desktop app's client secret as non-confidential, which is why it
 
 Outlook mail and calendar (work, school and personal accounts) sign in through the system browser with MSAL; tokens are encrypted with the OS keychain and stay on the computer. The app needs a Microsoft Entra app registration, set once by the maintainer:
 
-1. In [Entra admin center](https://entra.microsoft.com), App registrations, New registration. Name: Information Hub. Supported account types: any organizational directory and personal Microsoft accounts.
+1. In [Entra admin center](https://entra.microsoft.com), App registrations, New registration. Name: Atalia. Supported account types: any organizational directory and personal Microsoft accounts.
 2. Redirect URI: platform "Public client/native (mobile & desktop)", value `http://localhost`.
 3. API permissions, Microsoft Graph, Delegated: `Mail.Read`, `Calendars.Read`, `offline_access` (keep `User.Read`).
 4. Copy the Application (client) ID into `MICROSOFT_CLIENT_ID` in `src/main/accounts/microsoft.ts`. It is not a secret. For a quick test, set `HUB_MICROSOFT_CLIENT_ID` when running `npm run dev`.

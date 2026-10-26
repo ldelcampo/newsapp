@@ -1,6 +1,6 @@
 {
   "name": "newsapp",
-  "productName": "Information Hub",
+  "productName": "Atalia",
   "version": "0.0.1",
   "description": "Desktop hub for your mail, calendars, priorities and fact-checked news.",
   "main": "out/main/index.js",
