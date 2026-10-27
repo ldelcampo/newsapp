@@ -377,6 +377,8 @@ button.chip { font: inherit; color: var(--fg); }
 .weather { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; }
 .weather-text { display: flex; flex-direction: column; min-width: 0; }
 .size-small .weather-text { flex-basis: 100%; }
+.weather .rain { display: inline-flex; align-items: center; gap: 4px; }
+.weather .rain svg { width: 13px; height: 13px; color: var(--accent); }
 .temp {
   font-family: var(--display); font-size: 3rem; font-weight: 600; line-height: 1;
   background: linear-gradient(120deg, var(--fg), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent;

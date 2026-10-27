@@ -62,7 +62,14 @@ describe('widget data', () => {
     expect(() => parseMarketRates({ data: { currency: 'USD', rates: {} } }, ['MXN'], 0)).toThrow()
     expect(
       parseWeather({ current: { temperature_2m: 21.4, weather_code: 2, is_day: 0 }, current_units: { temperature_2m: '°C' }, daily: { temperature_2m_max: [24], temperature_2m_min: [12] } })
-    ).toEqual({ temperature: 21.4, code: 2, description: 'Partly cloudy', kind: 'partly', isDay: false, high: 24, low: 12, unit: '°C' })
+    ).toEqual({ temperature: 21.4, code: 2, description: 'Partly cloudy', kind: 'partly', isDay: false, high: 24, low: 12, unit: '°C', rainNow: null, rainToday: null })
+    expect(
+      parseWeather({
+        current: { time: '2026-10-27T11:15', temperature_2m: 18, weather_code: 61, is_day: 1 },
+        hourly: { time: ['2026-10-27T10:00', '2026-10-27T11:00', '2026-10-27T12:00'], precipitation_probability: [20, 45, 80] },
+        daily: { temperature_2m_max: [22], temperature_2m_min: [11], precipitation_probability_max: [80] }
+      })
+    ).toMatchObject({ kind: 'rain', rainNow: 45, rainToday: 80 })
     expect(parsePlaces({ results: [{ name: 'Monterrey', latitude: 25.67, longitude: -100.31, admin1: 'Nuevo León', country: 'Mexico' }, { name: 'bad' }] })).toEqual([
       { name: 'Monterrey, Nuevo León, Mexico', latitude: 25.67, longitude: -100.31 }
     ])
