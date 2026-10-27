@@ -257,6 +257,13 @@ function WeatherCard({ widget }: { widget: Extract<Widget, { type: 'weather' }> 
             <span className="muted small">
               High {Math.round(data.high)}° · Low {Math.round(data.low)}°
             </span>
+            {data.rainToday !== null && (
+              <span className="rain muted small" title="Chance of rain">
+                <Icon name="rain" />
+                {data.rainNow !== null && <>{data.rainNow}% now · </>}
+                {data.rainToday}% today
+              </span>
+            )}
           </span>
         </div>
       )}

@@ -165,6 +165,9 @@ export interface Weather {
   high: number
   low: number
   unit: string
+  /** Chance of rain (any precipitation) in the current hour and the most for today, 0–100. Null when Open-Meteo has none. */
+  rainNow: number | null
+  rainToday: number | null
 }
 
 /** Which animated scene the weather widget shows. */
@@ -185,19 +188,41 @@ const WMO: [number[], string, WeatherKind][] = [
 export const describeWeather = (code: number): string => WMO.find(([codes]) => codes.includes(code))?.[1] ?? 'Unknown'
 export const weatherKind = (code: number): WeatherKind => WMO.find(([codes]) => codes.includes(code))?.[2] ?? 'cloudy'
 
-/** Open-Meteo's /forecast response with current temperature_2m,weather_code,is_day and daily max/min. */
+const percent = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : null)
+
+/**
+ * Open-Meteo's /forecast response with current temperature_2m,weather_code,is_day, hourly
+ * precipitation_probability and daily max/min plus precipitation_probability_max.
+ */
 export function parseWeather(json: unknown): Weather {
   const j = json as {
-    current?: { temperature_2m?: unknown; weather_code?: unknown; is_day?: unknown }
+    current?: { time?: unknown; temperature_2m?: unknown; weather_code?: unknown; is_day?: unknown }
     current_units?: { temperature_2m?: unknown }
-    daily?: { temperature_2m_max?: unknown[]; temperature_2m_min?: unknown[] }
+    hourly?: { time?: unknown[]; precipitation_probability?: unknown[] }
+    daily?: { temperature_2m_max?: unknown[]; temperature_2m_min?: unknown[]; precipitation_probability_max?: unknown[] }
   }
   const t = j?.current?.temperature_2m
   const code = j?.current?.weather_code
   if (typeof t !== 'number' || typeof code !== 'number') throw new Error('Unexpected weather response')
   const high = Number(j.daily?.temperature_2m_max?.[0] ?? t)
   const low = Number(j.daily?.temperature_2m_min?.[0] ?? t)
-  return { temperature: t, code, description: describeWeather(code), kind: weatherKind(code), isDay: j.current?.is_day !== 0, high, low, unit: String(j.current_units?.temperature_2m ?? '°C') }
+  // Current time is local like "2026-10-27T11:15"; the hourly slot for it is "2026-10-27T11:00".
+  const hour = typeof j.current?.time === 'string' ? j.current.time.slice(0, 13) + ':00' : ''
+  const slot = j.hourly?.time?.indexOf(hour) ?? -1
+  const rainNow = slot >= 0 ? percent(j.hourly?.precipitation_probability?.[slot]) : null
+  const rainToday = percent(j.daily?.precipitation_probability_max?.[0])
+  return {
+    temperature: t,
+    code,
+    description: describeWeather(code),
+    kind: weatherKind(code),
+    isDay: j.current?.is_day !== 0,
+    high,
+    low,
+    unit: String(j.current_units?.temperature_2m ?? '°C'),
+    rainNow,
+    rainToday: rainToday ?? rainNow
+  }
 }
 
 /**
