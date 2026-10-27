@@ -740,3 +740,21 @@ button.chip { font: inherit; color: var(--fg); }
 .paged { animation: page-in 0.35s var(--ease); }
 @keyframes page-in { from { opacity: 0; transform: translateX(8px); } }
 .widget-option .row select { flex: 1; min-width: 0; }
+
+/* Picking several messages: a checkbox per row (shown on hover, or on every row once one is ticked) and a bar of bulk actions. */
+.mail.clickable li { cursor: pointer; }
+.mail-check { flex: none; width: 15px; height: 15px; margin: 6px 0 0; accent-color: var(--accent); cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.mail li:hover .mail-check, .mail li:focus-within .mail-check, .mail.checking .mail-check { opacity: 1; }
+.mail li.checked { background: var(--accent-soft); border-radius: 10px; box-shadow: inset 3px 0 0 var(--accent); }
+.mail li.checked + li.checked { border-top-color: transparent; }
+.mail-view .mail li { padding-left: 6px; padding-right: 6px; }
+.bulk-bar {
+  position: sticky; top: -10px; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 38px; margin: -10px -8px 0; padding: 6px 12px;
+  /* Opaque so rows don't show through while scrolling; no backdrop-filter (it blinks on macOS). */
+  background: linear-gradient(var(--surface-2), var(--surface-2)), var(--bg); border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0;
+}
+.bulk-bar input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.bulk-bar.on { border-bottom-color: var(--accent); }
+.bulk-bar .bulk-count { font-size: 0.85rem; white-space: nowrap; }
+.bulk-bar .mail-actions { opacity: 1; flex: 1; flex-wrap: wrap; }
+.bulk-bar > .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

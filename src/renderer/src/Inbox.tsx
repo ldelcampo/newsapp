@@ -20,7 +20,9 @@ export function MailList({
   selected,
   onSelect,
   onVerdict,
-  actions
+  actions,
+  checked,
+  onCheck
 }: {
   mail: RankedMail[]
   accounts: Account[]
@@ -31,15 +33,39 @@ export function MailList({
   onVerdict?: (m: RankedMail, verdict: Verdict | null) => void
   /** Buttons shown on hover, such as archive and snooze. */
   actions?: (m: RankedMail) => React.ReactNode
+  /** Messages ticked for a bulk action; with `onCheck`, each row gets a checkbox. */
+  checked?: ReadonlySet<string>
+  /** Ticks or unticks one message, or (`range`) every message from the last one ticked. */
+  onCheck?: (m: RankedMail, how: 'toggle' | 'range') => void
 }): React.JSX.Element {
+  // The whole row opens the message; ⌘/Ctrl-click ticks it and Shift-click ticks a run.
+  const click = (e: React.MouseEvent, m: RankedMail): void => {
+    if ((e.target as HTMLElement).closest('button:not(.subject), input, select, label')) return
+    if (onCheck && (e.metaKey || e.ctrlKey)) onCheck(m, 'toggle')
+    else if (onCheck && e.shiftKey) onCheck(m, 'range')
+    else onSelect?.(m)
+  }
   return (
-    <ol className={`mail ${compact ? 'compact' : ''}`}>
+    <ol className={`mail ${compact ? 'compact' : ''} ${onSelect ? 'clickable' : ''} ${checked?.size ? 'checking' : ''}`}>
       {mail.map((m, i) => (
         <li
           key={`${m.accountId}:${m.id}`}
-          className={`urgency-${m.urgency} ${m.unread ? 'unread' : ''} ${selected === m.id ? 'selected' : ''}`}
+          className={`urgency-${m.urgency} ${m.unread ? 'unread' : ''} ${selected === m.id ? 'selected' : ''} ${checked?.has(m.id) ? 'checked' : ''}`}
           style={{ '--i': Math.min(i, 12) } as React.CSSProperties}
+          onClick={onSelect ? (e) => click(e, m) : undefined}
+          // Keeps Shift-click from selecting text across rows.
+          onMouseDown={onCheck ? (e) => e.shiftKey && e.preventDefault() : undefined}
         >
+          {onCheck && (
+            <input
+              type="checkbox"
+              className="mail-check"
+              aria-label={`Select “${m.subject}”`}
+              checked={checked?.has(m.id) ?? false}
+              readOnly
+              onClick={(e) => onCheck(m, e.shiftKey ? 'range' : 'toggle')}
+            />
+          )}
           <span className="urgency-dot" title={URGENCY_LABEL[m.urgency]} aria-label={`${URGENCY_LABEL[m.urgency]}${m.unread ? ', unread' : ''}`} />
           <div className="mail-body">
             <div className="mail-top">
@@ -47,9 +73,7 @@ export function MailList({
               <span className="muted small">{timeAgo(m.receivedAt)}</span>
             </div>
             {onSelect ? (
-              <button className="article-link subject" onClick={() => onSelect(m)}>
-                {m.subject}
-              </button>
+              <button className="article-link subject">{m.subject}</button>
             ) : m.webUrl ? (
               <button className="article-link subject" onClick={() => void window.hub.openExternal(m.webUrl!)}>
                 {m.subject}

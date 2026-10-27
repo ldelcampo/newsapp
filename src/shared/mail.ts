@@ -312,9 +312,9 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
 
     score = Math.round(score)
     const verdict = prefs.messages[m.id]?.verdict
-    // Read mail older than two days has been dealt with, whatever it scored.
-    const stale = !m.unread && hours > 48
-    let urgency: MailUrgency = score >= 40 && !stale ? 'now' : score >= 22 ? 'soon' : 'later'
+    // Mail the user has read no longer needs them today, unless they starred it.
+    const seen = !m.unread && !m.starred
+    let urgency: MailUrgency = score >= 40 && !seen ? 'now' : score >= 22 ? 'soon' : 'later'
     let hidden = false
     if (rule?.importance === 'important') {
       urgency = urgency === 'later' ? 'soon' : urgency
@@ -326,7 +326,7 @@ export function rankMail(messages: MailMessage[], prefs: MailPrefs, now = new Da
       reasons.unshift([97, rule.importance === 'hide' ? 'Your rule: hidden' : 'Your rule: not important'])
     } else if (rule?.category) reasons.unshift([96, `Your rule: ${categoryLabel(rule.category)}`])
     if (verdict === 'important') {
-      urgency = 'now'
+      urgency = m.unread || m.starred ? 'now' : 'soon'
       hidden = false
       reasons.unshift([99, 'You marked it important'])
     }

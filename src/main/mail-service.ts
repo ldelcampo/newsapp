@@ -137,7 +137,7 @@ export class MailService {
     }
   }
 
-  /** Changes messages at their providers. Archiving or trashing one also ends its snooze. */
+  /** Changes messages at their providers. Archiving or trashing one ends its snooze; reading one back from a snooze does too. */
   async act(ids: string[], action: MailAction): Promise<void> {
     const byAccount = new Map<string, string[]>()
     for (const id of ids) {
@@ -150,6 +150,11 @@ export class MailService {
       this.last = this.last.filter((m) => !ids.includes(m.id))
       for (const id of ids) this.prefs = applySnooze(this.prefs, id, null)
       this.save()
+    } else if (action === 'read') {
+      const now = this.now().toISOString()
+      const woke = ids.filter((id) => this.prefs.snoozed[id] && this.prefs.snoozed[id] <= now)
+      for (const id of woke) this.prefs = applySnooze(this.prefs, id, null)
+      if (woke.length) this.save()
     }
   }
 
