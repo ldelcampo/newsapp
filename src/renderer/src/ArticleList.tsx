@@ -58,24 +58,31 @@ export function ArticleList({ articles, ranked = false, compact = false }: { art
   )
 }
 
-type Tile = 'hero' | 'photo' | 'wide' | 'text'
-
-/** The first story leads; stories with a picture stand tall; strong matches without one run wide. */
-function tileFor(a: RankedArticle, i: number, imageOk: boolean): Tile {
-  const image = !!a.imageUrl && imageOk
-  if (i === 0) return image ? 'hero' : 'wide'
-  if (image) return 'photo'
-  return a.priority === 'high' ? 'wide' : 'text'
+/** A steady hue per source, so a story without a picture still gets a recognisable cover. */
+function sourceHue(name: string): number {
+  let h = 0
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) % 360
+  return h
 }
 
+/**
+ * The first story leads as a 2×2 tile and every other story is a 1×2 tile, with or without a picture,
+ * so the grid packs without holes and keeps the ranking order. A missing or broken picture becomes a
+ * tinted cover with the source name instead of changing the tile's size.
+ */
 function MosaicTile({ a, i, compact, onVerify }: { a: RankedArticle; i: number; compact: boolean; onVerify: () => void }): React.JSX.Element {
   const [image, setImage] = useState<'loading' | 'ok' | 'failed'>('loading')
-  const tile = tileFor(a, i, image !== 'failed')
+  const hero = i === 0
+  const picture = !!a.imageUrl && image !== 'failed'
   return (
-    <li className={`tile tile-${tile}`} style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
-      {a.imageUrl && image !== 'failed' && (
+    <li className={`tile ${hero ? 'tile-hero' : 'tile-photo'}`} style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
+      {picture ? (
         <div className={`tile-image ${image}`}>
           <img src={a.imageUrl} alt="" loading="lazy" referrerPolicy="no-referrer" onLoad={() => setImage('ok')} onError={() => setImage('failed')} />
+        </div>
+      ) : (
+        <div className="tile-image tile-cover" style={{ '--hue': sourceHue(a.sourceName) } as React.CSSProperties} aria-hidden="true">
+          <span>{a.sourceName}</span>
         </div>
       )}
       <div className="tile-body">
@@ -83,15 +90,15 @@ function MosaicTile({ a, i, compact, onVerify }: { a: RankedArticle; i: number; 
         <button className="article-link" onClick={() => void window.hub.openExternal(a.url)}>
           {a.title}
         </button>
-        {a.summary && (tile === 'hero' || tile === 'wide') && !compact && <p className="summary">{a.summary}</p>}
+        {a.summary && hero && !compact && <p className="summary">{a.summary}</p>}
         <div className="meta">
           <span className="source">{a.sourceName}</span>
-          {tile !== 'text' && <span className={`lean lean-${a.lean}`}>{leanLabel(a.lean)}</span>}
+          <span className={`lean lean-${a.lean}`}>{leanLabel(a.lean)}</span>
           <span>{timeAgo(a.publishedAt)}</span>
           {!compact && (
             <button type="button" className="verify-btn" aria-label="Verify facts" title="Verify facts" onClick={onVerify}>
               <Icon name="verify" />
-              {(tile === 'hero' || tile === 'wide') && 'Verify'}
+              {hero && 'Verify'}
             </button>
           )}
         </div>
@@ -100,7 +107,7 @@ function MosaicTile({ a, i, compact, onVerify }: { a: RankedArticle; i: number; 
   )
 }
 
-/** Stories as a mosaic of tiles: a lead story, tall picture tiles and short text tiles, packed without gaps. */
+/** Stories as a mosaic of tiles: a lead story, then same-size tiles in ranking order, packed without gaps. */
 export function ArticleMosaic({ articles, compact = false }: { articles: RankedArticle[]; compact?: boolean }): React.JSX.Element {
   const [verifying, setVerifying] = useState<RankedArticle | null>(null)
   return (
