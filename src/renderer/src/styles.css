@@ -125,7 +125,7 @@ code { font-family: var(--mono); font-size: 0.85em; }
   background: linear-gradient(var(--accent), var(--accent-2)); box-shadow: 0 0 12px var(--accent); animation: grow 0.35s var(--ease);
 }
 .nav.active .icon { color: var(--accent); }
-.soon { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+.nav .soon { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
 @keyframes grow { from { transform: scaleY(0); } }
 
 .icon { width: 18px; height: 18px; flex: none; }
