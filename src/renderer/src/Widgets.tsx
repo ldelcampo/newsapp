@@ -18,7 +18,8 @@ export interface WidgetContext {
   news: NewsResult | null
   loading: boolean
   reload: () => void
-  onOpen: (view: 'news' | 'settings' | 'work' | 'mail' | 'calendar') => void
+  /** Opens a section; for Mail, `mailId` opens that message there. */
+  onOpen: (view: 'news' | 'settings' | 'work' | 'mail' | 'calendar', mailId?: string) => void
 }
 
 /** Runs an async load whenever `key` changes; keeps the last result while reloading. */
@@ -332,7 +333,7 @@ function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JS
   const { accounts } = useAccounts()
   const { feed, error } = useMail()
   const withMail = accounts?.filter((a) => a.mail) ?? []
-  const today = feed?.items.filter((m) => m.urgency === 'now').length ?? 0
+  const today = feed?.items.filter((m) => m.urgency === 'now' && m.unread).length ?? 0
   const unread = feed?.items.filter((m) => m.unread).length ?? 0
   const p = usePage(feed?.items ?? [], MAIL_COUNT[size])
   return (
@@ -358,7 +359,7 @@ function Mail({ ctx, size }: { ctx: WidgetContext; size: WidgetSize }): React.JS
           {feed && feed.items.length === 0 && <p className="muted">Your inbox is empty.</p>}
           {feed && (
             <div className="paged" key={p.at}>
-              <MailList mail={p.page} accounts={withMail} compact={size === 'small'} />
+              <MailList mail={p.page} accounts={withMail} compact={size === 'small'} onSelect={(m) => ctx.onOpen('mail', m.id)} />
             </div>
           )}
           {feed && <Pager {...p} total={feed.items.length} perPage={MAIL_COUNT[size]} label="Mail" />}

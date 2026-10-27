@@ -22,6 +22,12 @@ const VIEWS: { id: View; label: string; comingIn?: string }[] = [
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<View>('dashboard')
+  // A message chosen on the dashboard, for the Mail view to open.
+  const [mailFocus, setMailFocus] = useState('')
+  const go = (v: View, mailId = ''): void => {
+    setMailFocus(mailId)
+    setView(v)
+  }
   // Bumped when another computer's changes arrive, so the open view reloads them.
   const [revision, setRevision] = useState(0)
   const [remoteNotice, setRemoteNotice] = useState(false)
@@ -45,10 +51,10 @@ export function App(): React.JSX.Element {
           <p className="muted">{current.comingIn}</p>
         </div>
       )
-    if (view === 'dashboard') return <DashboardView onOpen={setView} />
+    if (view === 'dashboard') return <DashboardView onOpen={go} />
     if (view === 'news') return <NewsView />
     if (view === 'work') return <WorkView onOpen={setView} />
-    if (view === 'mail') return <MailView onAdd={() => setView('settings')} />
+    if (view === 'mail') return <MailView focus={mailFocus} onAdd={() => setView('settings')} />
     if (view === 'calendar') return <CalendarView onAdd={() => setView('settings')} />
     return <SettingsView />
   }
@@ -70,7 +76,7 @@ export function App(): React.JSX.Element {
             key={v.id}
             className={v.id === view ? 'nav active' : 'nav'}
             aria-current={v.id === view ? 'page' : undefined}
-            onClick={() => setView(v.id)}
+            onClick={() => go(v.id)}
           >
             <Icon name={v.id} />
             {v.label}

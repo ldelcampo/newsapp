@@ -130,9 +130,17 @@ describe('rankMail', () => {
     expect(prefs).toEqual(EMPTY_PREFS)
   })
 
-  it('keeps a message the user marked important in "needs you today"', () => {
+  it('keeps a message the user marked important in "needs you today" until it is read', () => {
     const prefs = applyVerdict(EMPTY_PREFS, msg('m', { bulk: true }), 'important', NOW)
-    expect(rankMail([msg('m', { bulk: true, unread: false })], prefs, NOW)[0]).toMatchObject({ urgency: 'now', verdict: 'important' })
+    expect(rankMail([msg('m', { bulk: true })], prefs, NOW)[0]).toMatchObject({ urgency: 'now', verdict: 'important' })
+    expect(rankMail([msg('m', { bulk: true, unread: false })], prefs, NOW)[0]).toMatchObject({ urgency: 'soon', verdict: 'important' })
+  })
+
+  it('stops counting mail the user has read as needing them today', () => {
+    const ask = { subject: 'Can you approve the budget today?' }
+    expect(rankMail([msg('q', ask)], EMPTY_PREFS, NOW)[0].urgency).toBe('now')
+    expect(rankMail([msg('q', { ...ask, unread: false })], EMPTY_PREFS, NOW)[0].urgency).toBe('soon')
+    expect(rankMail([msg('q', { ...ask, unread: false, starred: true })], EMPTY_PREFS, NOW)[0].urgency).toBe('now')
   })
 
   it('drops malformed saved preferences', () => {
@@ -281,6 +289,18 @@ describe('MailService actions', () => {
     service.snooze('a1', null)
     expect((await service.load(DEFAULT_SETTINGS)).snoozed).toEqual([])
     await expect(service.act(['gone'], 'read')).rejects.toThrow(/no longer loaded/)
+  })
+
+  it('lets mail back from a snooze go once it is read', async () => {
+    const dir = tempDir()
+    let now = NOW
+    const service = new MailService(dir, fakeAccounts([msg('a1', { unread: false })], []), new SecretStore(dir, plain), fetch, () => now)
+    await service.load(DEFAULT_SETTINGS)
+    service.snooze('a1', 'later')
+    now = new Date(NOW.getTime() + 4 * 3_600_000)
+    expect((await service.load(DEFAULT_SETTINGS)).items[0]).toMatchObject({ urgency: 'now' })
+    await service.act(['a1'], 'read')
+    expect((await service.load(DEFAULT_SETTINGS)).items[0].urgency).not.toBe('now')
   })
 })
 

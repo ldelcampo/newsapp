@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, MailAction, MailBody } from '@shared/accounts'
 import { byDate, MAIL_CATEGORIES, SNOOZE_OPTIONS, type MailCategory, type MailUrgency, type RankedMail, type SnoozeOption, type Verdict } from '@shared/mail'
 import { ArticleSkeleton } from './ArticleList'
@@ -16,8 +16,10 @@ type Override = Partial<Pick<RankedMail, 'unread' | 'starred' | 'snoozedUntil'>>
 const ACTION_LABELS: Record<MailAction, string> = { read: 'Marked as read', unread: 'Marked as unread', archive: 'Archived', trash: 'Moved to Trash', star: 'Starred', unstar: 'Unstarred' }
 const until = (iso: string): string => new Date(iso).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })
 
-/** Every inbox in one list: "Needs you" ranks it, "All mail" keeps inbox order. */
-export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
+const many = (n: number, text: string): string => (n > 1 ? `${text} (${n} messages)` : text)
+
+/** Every inbox in one list: "Needs you" ranks it, "All mail" keeps inbox order. `focus` opens that message once it loads. */
+export function MailView({ focus = '', onAdd }: { focus?: string; onAdd: () => void }): React.JSX.Element {
   const { accounts, refresh } = useAccounts()
   const { feed, error, loading, reload } = useMail()
   const [tab, setTab] = useState<Tab>('needs')
@@ -27,6 +29,10 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
   const [composing, setComposing] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
+  // Ticked messages for bulk actions, and the last one ticked, where a Shift-click run starts.
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set())
+  const anchor = useRef('')
+  const focused = useRef(false)
 
   const withMail = accounts?.filter((a) => a.mail) ?? []
   const apply = (m: RankedMail): RankedMail & { gone?: boolean } => {
@@ -43,51 +49,54 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
   }, [feed, overrides, account])
   const open = [...items, ...snoozed].find((m) => m.id === openId) ?? null
 
-  const set = (id: string, o: Override): void => setOverrides((x) => ({ ...x, [id]: { ...x[id], ...o } }))
-  const undo = (id: string, keys: (keyof Override)[]): void =>
-    setOverrides((x) => ({ ...x, [id]: Object.fromEntries(Object.entries(x[id] ?? {}).filter(([k]) => !keys.includes(k as keyof Override))) }))
+  const set = (ids: string[], o: Override): void => setOverrides((x) => ({ ...x, ...Object.fromEntries(ids.map((id) => [id, { ...x[id], ...o }])) }))
+  const undo = (ids: string[], keys: (keyof Override)[]): void =>
+    setOverrides((x) => ({ ...x, ...Object.fromEntries(ids.map((id) => [id, Object.fromEntries(Object.entries(x[id] ?? {}).filter(([k]) => !keys.includes(k as keyof Override)))])) }))
   const say = (text: string, isError = false): void => {
     setNotice({ text, error: isError })
     if (!isError) setTimeout(() => setNotice((n) => (n?.text === text ? null : n)), 4000)
   }
 
-  const act = (m: RankedMail, action: MailAction, quiet = false): void => {
+  const act = (ms: RankedMail[], action: MailAction, quiet = false): void => {
+    if (!ms.length) return
+    const ids = ms.map((m) => m.id)
     const o: Override =
       action === 'archive' || action === 'trash' ? { gone: true } : action === 'read' || action === 'unread' ? { unread: action === 'unread' } : { starred: action === 'star' }
-    set(m.id, o)
-    if (o.gone && openId === m.id) setOpenId('')
-    window.hub.mailAct([m.id], action).then(
-      () => !quiet && say(ACTION_LABELS[action]),
+    set(ids, o)
+    if (o.gone && ids.includes(openId)) setOpenId('')
+    window.hub.mailAct(ids, action).then(
+      () => !quiet && say(many(ids.length, ACTION_LABELS[action])),
       (e: Error) => {
-        undo(m.id, Object.keys(o) as (keyof Override)[])
+        undo(ids, Object.keys(o) as (keyof Override)[])
         if (!quiet) say(errorText(e), true)
       }
     )
   }
-  const snooze = (m: RankedMail, option: SnoozeOption | null): void => {
-    window.hub.mailSnooze(m.id, option).then(
-      (at) => {
-        set(m.id, { snoozedUntil: at ?? undefined })
-        if (at && openId === m.id) setOpenId('')
-        say(at ? `Snoozed until ${until(at)}` : 'Back in your inbox')
+  const snooze = (ms: RankedMail[], option: SnoozeOption | null): void => {
+    Promise.all(ms.map((m) => window.hub.mailSnooze(m.id, option))).then(
+      (ats) => {
+        ms.forEach((m, i) => set([m.id], { snoozedUntil: ats[i] ?? undefined }))
+        if (ats[0] && ms.some((m) => m.id === openId)) setOpenId('')
+        say(many(ms.length, ats[0] ? `Snoozed until ${until(ats[0])}` : 'Back in your inbox'))
         reload()
       },
-      (e: Error) => say(errorText(e), true)
+      (e: Error) => (say(errorText(e), true), reload())
     )
   }
-  const verdict = (m: RankedMail, v: Verdict | null): void => {
-    set(m.id, { verdict: v })
-    window.hub
-      .mailFeedback(m.id, v)
+  const verdict = (ms: RankedMail[], v: Verdict | null): void => {
+    const ids = ms.map((m) => m.id)
+    set(ids, { verdict: v })
+    Promise.all(ids.map((id) => window.hub.mailFeedback(id, v)))
       .then(() => reload())
-      .catch(() => undo(m.id, ['verdict']))
+      .catch(() => undo(ids, ['verdict']))
   }
   const select = (m: RankedMail): void => {
     setComposing(false)
     setRulesOpen(false)
     setOpenId(m.id)
-    // Opening a message reads it, as in any mail app; read-only accounts just skip this.
-    if (m.unread && !feed?.readOnly.includes(m.accountId)) act(m, 'read', true)
+    // Opening a message reads it, as in any mail app, and lets mail back from a snooze go; read-only accounts just skip this.
+    const woke = !!m.snoozedUntil && m.snoozedUntil <= new Date().toISOString()
+    if ((m.unread || woke) && !feed?.readOnly.includes(m.accountId)) act([m], 'read', true)
   }
   const allowChanges = (id: string): void => {
     window.hub.reconnectAccount(id).then(
@@ -100,16 +109,63 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
     )
   }
 
-  // Keyboard: e archive, # delete, s star, u unread, Esc closes the message.
+  const needs = items.filter((m) => m.verdict !== 'not' && (m.verdict === 'important' || (m.urgency !== 'later' && !m.hidden)))
+  const kinds = MAIL_CATEGORIES.map((c) => ({ ...c, list: items.filter((m) => m.kind === c.value && !m.hidden).sort(byDate) })).filter((c) => c.list.length || tab === c.value)
+  const inKind = kinds.find((c) => c.value === tab)?.list
+  const groups = (['now', 'soon'] as MailUrgency[]).map((u) => ({ u, list: needs.filter((m) => m.urgency === u) })).filter((g) => g.list.length)
+  const all = [...items].sort(byDate)
+  const readOnly = withMail.filter((a) => feed?.readOnly.includes(a.id))
+  /** The messages in the open tab, in the order shown. */
+  const visible = tab === 'needs' ? groups.flatMap((g) => g.list) : tab === 'all' ? all : tab === 'snoozed' ? snoozed : (inKind ?? [])
+  const picked = visible.filter((m) => checked.has(m.id))
+
+  const check = (m: RankedMail, how: 'toggle' | 'range'): void => {
+    const from = visible.findIndex((x) => x.id === anchor.current)
+    const to = visible.findIndex((x) => x.id === m.id)
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (how === 'range' && from >= 0 && to >= 0) for (const x of visible.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(x.id)
+      else if (next.has(m.id)) next.delete(m.id)
+      else next.add(m.id)
+      return next
+    })
+    anchor.current = m.id
+  }
+  const clearChecks = (): void => setChecked(new Set())
+  const bulk = (fn: () => void, keep = false): void => {
+    fn()
+    if (!keep) clearChecks()
+  }
+  useEffect(clearChecks, [tab, account])
+
+  // A message chosen on the dashboard: open it in the tab that shows it.
   useEffect(() => {
-    if (!open) return
+    if (!focus || focused.current || !feed) return
+    focused.current = true
+    const m = [...items, ...snoozed].find((x) => x.id === focus)
+    if (!m) return
+    setTab(snoozed.includes(m) ? 'snoozed' : needs.includes(m) ? 'needs' : 'all')
+    select(m)
+    requestAnimationFrame(() => document.querySelector('.mail li.selected')?.scrollIntoView({ block: 'nearest' }))
+  }, [feed, focus])
+
+  // Keyboard: e archive, # delete, s star, u unread, Esc closes the message. With messages ticked, the keys act on those;
+  // ⌘/Ctrl-A ticks every message in the tab.
+  useEffect(() => {
+    const targets = picked.length ? picked : open ? [open] : []
     const onKey = (e: KeyboardEvent): void => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === 'e') act(open, 'archive')
-      else if (e.key === '#') act(open, 'trash')
-      else if (e.key === 's') act(open, open.starred ? 'unstar' : 'star')
-      else if (e.key === 'u') act(open, 'unread')
-      else if (e.key === 'Escape') setOpenId('')
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
+      if ((e.metaKey || e.ctrlKey) && e.key === 'a' && visible.length && !composing && !rulesOpen) {
+        e.preventDefault()
+        return setChecked(new Set(visible.map((m) => m.id)))
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || !targets.length) return
+      const starAll = targets.some((m) => !m.starred)
+      if (e.key === 'e') bulk(() => act(targets, 'archive'))
+      else if (e.key === '#') bulk(() => act(targets, 'trash'))
+      else if (e.key === 's') bulk(() => act(targets, starAll ? 'star' : 'unstar'), true)
+      else if (e.key === 'u') bulk(() => act(targets, picked.length && targets.every((m) => m.unread) ? 'read' : 'unread'), true)
+      else if (e.key === 'Escape') picked.length ? clearChecks() : setOpenId('')
       else return
       e.preventDefault()
     }
@@ -119,16 +175,9 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
 
   if (accounts && withMail.length === 0) return <ConnectPrompt what="mail" onOpen={onAdd} />
 
-  const needs = items.filter((m) => m.verdict !== 'not' && (m.verdict === 'important' || (m.urgency !== 'later' && !m.hidden)))
-  const kinds = MAIL_CATEGORIES.map((c) => ({ ...c, list: items.filter((m) => m.kind === c.value && !m.hidden).sort(byDate) })).filter((c) => c.list.length || tab === c.value)
-  const inKind = kinds.find((c) => c.value === tab)?.list
-  const groups = (['now', 'soon'] as MailUrgency[]).map((u) => ({ u, list: needs.filter((m) => (m.verdict === 'important' ? 'now' : m.urgency) === u) })).filter((g) => g.list.length)
-  const all = [...items].sort(byDate)
-  const readOnly = withMail.filter((a) => feed?.readOnly.includes(a.id))
-
-  const actions = (m: RankedMail): React.JSX.Element => <MailActions m={m} onAct={act} onSnooze={snooze} />
+  const actions = (m: RankedMail): React.JSX.Element => <MailActions m={m} onAct={(x, a) => act([x], a)} onSnooze={(x, o) => snooze([x], o)} />
   const list = (mail: RankedMail[]): React.JSX.Element => (
-    <MailList mail={mail} accounts={withMail} selected={openId} onSelect={select} onVerdict={verdict} actions={actions} />
+    <MailList mail={mail} accounts={withMail} selected={openId} onSelect={select} onVerdict={(m, v) => verdict([m], v)} actions={actions} checked={checked} onCheck={check} />
   )
   const status = loading ? 'Updating…' : feed ? `Updated ${timeAgo(feed.fetchedAt)} · ${feed.ranking === 'jev' ? 'ranked with Jev' : 'built-in ranking'}` : ''
 
@@ -198,6 +247,17 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
 
       <div className="mail-panes">
         <section className="card enter mail-list-card" style={{ '--i': 1 } as React.CSSProperties}>
+          {feed && visible.length > 0 && (
+            <BulkBar
+              picked={picked}
+              total={visible.length}
+              onAll={() => setChecked(picked.length === visible.length ? new Set() : new Set(visible.map((m) => m.id)))}
+              onClear={clearChecks}
+              onAct={(a) => bulk(() => act(picked, a), a !== 'archive' && a !== 'trash')}
+              onSnooze={(o) => bulk(() => snooze(picked, o))}
+              onVerdict={(v) => bulk(() => verdict(picked, v), true)}
+            />
+          )}
           {error && <p className="error small">Couldn’t load mail: {error}</p>}
           {!feed && !error && <ArticleSkeleton rows={6} />}
           {feed && tab !== 'snoozed' && items.length === 0 && <p className="muted">Your inbox is empty.</p>}
@@ -222,7 +282,7 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
             m={open}
             accounts={withMail}
             onClose={() => setOpenId('')}
-            onVerdict={verdict}
+            onVerdict={(m, v) => verdict([m], v)}
             actions={
               <>
                 {actions(open)}
@@ -257,6 +317,85 @@ export function MailView({ onAdd }: { onAdd: () => void }): React.JSX.Element {
           </section>
         )}
       </div>
+    </div>
+  )
+}
+
+/** The select-all box over the list and, once messages are ticked, what can be done to all of them at once. */
+function BulkBar({
+  picked,
+  total,
+  onAll,
+  onClear,
+  onAct,
+  onSnooze,
+  onVerdict
+}: {
+  picked: RankedMail[]
+  total: number
+  onAll: () => void
+  onClear: () => void
+  onAct: (a: MailAction) => void
+  onSnooze: (o: SnoozeOption | null) => void
+  onVerdict: (v: Verdict) => void
+}): React.JSX.Element {
+  const n = picked.length
+  const unread = picked.some((m) => m.unread)
+  const unstarred = picked.some((m) => !m.starred)
+  return (
+    <div className={`bulk-bar ${n ? 'on' : ''}`} role="toolbar" aria-label="Selected messages">
+      <input
+        type="checkbox"
+        aria-label={n === total ? 'Select none' : 'Select all'}
+        title={n === total ? 'Select none' : 'Select all (⌘A)'}
+        checked={n > 0 && n === total}
+        ref={(el) => void (el && (el.indeterminate = n > 0 && n < total))}
+        onChange={onAll}
+      />
+      {n === 0 ? (
+        <span className="muted small">Select messages to act on several at once · ⌘-click or Shift-click</span>
+      ) : (
+        <>
+          <b className="bulk-count">{n} selected</b>
+          <div className="mail-actions" role="group" aria-label="Actions for the selected messages">
+            <button className="ghost icon-only" title="Archive (e)" aria-label="Archive selected" onClick={() => onAct('archive')}>
+              <Icon name="archive" />
+            </button>
+            <button className="ghost icon-only" title="Delete (#)" aria-label="Delete selected" onClick={() => onAct('trash')}>
+              <Icon name="trash" />
+            </button>
+            <button className="ghost icon-only" title={unread ? 'Mark as read' : 'Mark as unread (u)'} aria-label={unread ? 'Mark selected as read' : 'Mark selected as unread'} onClick={() => onAct(unread ? 'read' : 'unread')}>
+              <Icon name="mail" />
+            </button>
+            <button className="ghost icon-only" title={unstarred ? 'Star (s)' : 'Unstar (s)'} aria-label={unstarred ? 'Star selected' : 'Unstar selected'} onClick={() => onAct(unstarred ? 'star' : 'unstar')}>
+              <Icon name="star" />
+            </button>
+            <label className="snooze" title="Snooze">
+              <Icon name="snooze" />
+              <select aria-label="Snooze selected" value="" onChange={(e) => onSnooze(e.target.value === 'wake' ? null : (e.target.value as SnoozeOption))}>
+                <option value="" disabled>
+                  Snooze until…
+                </option>
+                {SNOOZE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+                {picked.some((m) => m.snoozedUntil) && <option value="wake">Unsnooze now</option>}
+              </select>
+            </label>
+            <button className="ghost icon-only" title="Important" aria-label="Mark selected important" onClick={() => onVerdict('important')}>
+              <Icon name="up" />
+            </button>
+            <button className="ghost icon-only" title="Not important" aria-label="Mark selected not important" onClick={() => onVerdict('not')}>
+              <Icon name="down" />
+            </button>
+          </div>
+          <button className="ghost icon-only" title="Clear selection (Esc)" aria-label="Clear selection" onClick={onClear}>
+            <Icon name="close" />
+          </button>
+        </>
+      )}
     </div>
   )
 }
